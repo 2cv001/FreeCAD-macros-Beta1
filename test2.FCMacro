@@ -701,15 +701,20 @@ def setAlias(aliasCellsSelect, aliasAuto):
         sellStart=getIniCellForAlias()
         columnTextAlias=get_column(sellStart)
         rowStartAlias=get_row(sellStart)
-        for i in range(rowStartAlias, 101):
-            tabCells.append(columnTextAlias+format(i))
+        for i in range(rowStartAlias, 20000):
+            try :
+                activeCellContenu = mySpreadSheet.getContents(columnTextAlias+format(i))
+                tabCells.append(columnTextAlias+format(i))
+            except :
+                break
 #    else :
     if aliasCellsSelect :
         for item in sel_items: # The selected cells are scanned
             tabCells.append( cellName(item.row(), item.column())) # We retrieve the cell ID in tabCells 
 
     # we check that one of the cells is not a numeric. If not, message and exit    
-    for cell in tabCells: # The selected cells are scanned        
+    for cell in tabCells: # The selected cells are scanned
+        
         activeCellContenu = mySpreadSheet.getContents(cell)
         f = ''
         try :
@@ -740,10 +745,10 @@ def setAlias(aliasCellsSelect, aliasAuto):
         except ValueError: # If a "ValueError" is triggered (which happens when the alias is not valid)
             # The user is warned in the report
             App.Console.PrintWarning("Can't set alias for cell {} : {} isn't valid\n".format(next_cell, alias))
-    if not changed and getIniCheckboxStateForAlias():
-        QtWidgets.QMessageBox.warning(Gui.getMainWindow(), 
-                "Warning","No alias have been created. Be sure to have the name of the alias under cell "+getIniCellForAlias()
-                + '\nand a numeric value in the next column. Select the case with the numeric value.' )
+    # if not changed and getIniCheckboxStateForAlias():
+        # QtWidgets.QMessageBox.warning(Gui.getMainWindow(), 
+                # "Warning","No alias have been created. Be sure to have the name of the alias under cell "+getIniCellForAlias()
+                # + '\nand a numeric value in the next column. Select the case with the numeric value.' )
     
     # if  getIniCheckboxStateForAlias() :   # checked => create alias but continue (False)
         # return False # the macro continue
@@ -1152,16 +1157,15 @@ def main():
             # +'of cells '+  getIniCellForAlias()+' and under?')
         # else :
         message=("You did not select any object in an active sketch"
-             + "\nDoes it mean you want to create alias at the rtight of selected cells "
-             + "using text in selected cells ?" + " and for cells at the right "
-            +'of cells '+  getIniCellForAlias()+' and under?')
+             + "\nDoes it mean you want to create alias at the right of selected cells "
+             + "using text in selected cells ?" )
         
         if QtGui.QMessageBox.warning(Gui.getMainWindow(),
         'Warning', message,
         QtGui.QMessageBox.Ok | QtGui.QMessageBox.Cancel) == QtGui.QMessageBox.Cancel: 
             # if user don't want
             return True 
-        setAlias(True,True) 
+        setAlias(True,False) 
         return
 
     try :
@@ -1327,8 +1331,8 @@ def main():
         # return
         
 
-#    if getIniCheckboxStateForAlias() : ################################################################################################################""
-    setAlias(False,True)
+    if getIniCheckboxStateForAlias() : ################################################################################################################""
+        setAlias(False,True)
 
     cellAlias = App.ActiveDocument.getObject(mySpreadSheetName).getAlias(cellCode)
     # if cellAlias == None and getIniCheckboxStateForAlias():  
