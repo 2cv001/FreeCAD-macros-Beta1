@@ -24,7 +24,7 @@ __Name__   = "Sketch Constraint From Spreadsheet"
 __Comment__ ="A simple click on a spreadsheet cell, adds a length constraint to a line, circle, points... using a spreadsheet cell alias or address (ex. C2). The macro can create alias for you."
 __Author__ = "2cv001"
 __Title__   = "Macro Sketch Constraint From Spreadsheet"
-__Date__    = "2024/01/16"    #YYYY/MM/DD 13:22
+__Date__    = "2024/01/16"    #YYYY/MM/DD 21:13
 __Version__ = __Date__
 __Icon__    = "https://wiki.freecad.org/images/d/dc/Macro_Sketch_Constraint_From_Spreadsheet.svg"
 __Wiki__    = "https://wiki.freecad.org/Macro_sketchConstraintFromSpreadsheet"
@@ -1218,6 +1218,7 @@ def main():
         activateSketchEditingWindow()
         return
     mySpreadSheetName = mySpreadSheet.Name
+    mySpreadSheetLabel = mySpreadSheet.Label
     # select the Spreadsheet To be able to retrieve the selected cell :
     mySpreadSheet.ViewObject.doubleClicked()
     # retrieve the selected cell
@@ -1348,12 +1349,15 @@ def main():
     #=================================
     # get value for constraint 
     cellAlias = App.ActiveDocument.getObject(mySpreadSheetName).getAlias(cellCode)
-    if cellAlias == None :
-        cellExpression = mySpreadSheetName + '.' + cellCode
-    else :
-        cellExpression = mySpreadSheetName + '.' + cellAlias
+    # if cellAlias == None :
+        # cellExpression = mySpreadSheetName + '.' + cellCode
+    # else :
+        # cellExpression = mySpreadSheetName + '.' + cellAlias
         
-            
+    if cellAlias == None :
+        cellExpression = '<<' + mySpreadSheetLabel + '>>' + '.' + cellCode
+    else :
+        cellExpression = '<<' + mySpreadSheetLabel + '>>' + '.' + cellAlias           
         
     if myPadOrPocket!=None :
         #myPadOrPocket.setExpression('Length', u'SpreadSheetDatas12.B5') 
