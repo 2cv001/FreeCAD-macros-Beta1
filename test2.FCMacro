@@ -701,7 +701,7 @@ def setAlias(aliasCellsSelect, aliasAuto):
         sellStart=getIniCellForAlias()
         columnTextAlias=get_column(sellStart)
         rowStartAlias=get_row(sellStart)
-        for i in range(rowStartAlias, 101):
+        for i in range(rowStartAlias, 300):
             tabCells.append(columnTextAlias+format(i))
 #    else :
     if aliasCellsSelect :
