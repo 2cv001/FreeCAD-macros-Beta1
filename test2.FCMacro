@@ -24,7 +24,7 @@ __Name__   = "Sketch Constraint From Spreadsheet"
 __Comment__ ="A simple click on a spreadsheet cell, adds a length constraint to a line, circle, points... using a spreadsheet cell alias or address (ex. C2). The macro can create alias for you."
 __Author__ = "2cv001"
 __Title__   = "Macro Sketch Constraint From Spreadsheet"
-__Date__    = "2024/01/17"    #YYYY/MM/DD 15:02 Béta
+__Date__    = "2024/01/18"    #YYYY/MM/DD 04:07 Béta
 __Version__ = __Date__
 __Icon__    = "https://wiki.freecad.org/images/d/dc/Macro_Sketch_Constraint_From_Spreadsheet.svg"
 __Wiki__    = "https://wiki.freecad.org/Macro_sketchConstraintFromSpreadsheet"
@@ -90,26 +90,25 @@ messages = {
         'foundCreateOne':'trouvé, en créer un ?',
         'Cancel':'Abandon', 
         'Warning':'Attention',        
-        'ClickOnACellBefore': "Cliquez dans une cellule avec une valeur numérique avant de lancer la macro", 
+        'ClickOnACellBefore': "Cliquez dans une cellule avec une valeur numérique avant de lancer la macro.", 
 
         "NoObjectSelected" : "Vous n'avez pas sélectionné d'objets dans le sketch actif."
                      + "\nCela veut il dire que vous souhaitez créer automatiquement des alias à droite des cellules sélectionnées" 
-                     + "en utilisant le texte de ces cellules sélectionnées",
+                     + "en utilisant le texte de ces cellules sélectionnées.",
 
         "NoActiveSpreadsheet":"Pas de cellule sélectionnée dans un spreadsheet actif."+
-                                            "\nSélectionnez un objet dans un sketch, \n"+
-                                            "puis sélectionnez une cellule dans un spreadsheet",                       
+                               "\nSélectionnez un objet dans un sketch, puis sélectionnez une cellule dans un spreadsheet.",                       
                      
-        "ConstarintConflicDetected"           :"Détection de conflit dans les contraintes. Annulation de la création de la conrainte ?",  
+        "ConstarintConflicDetected"  :"Détection de conflit dans les contraintes. Annulation de la création de la conrainte ?",  
                      
         "getConstraintTypeAliasToolLip": "Si coché, l'alias sera automatiquement créé lors de l'éxécution de la macro."
                         +"\nLes Alias seront créés à droite des cellules avec texte. Les cellules avec texte sont celle ci et en dessous : ",
-        "getConstraintTypeOption1ButtonSetText": "Constrainte horizontale ",
-        "getConstraintTypeOption2ButtonSetText": "Constrainte verticale",
-        "getConstraintTypeOption3ButtonSetText": "Constrainte alignée",
-        "getConstraintTypeOption1ButtonSetTextToolLip": "Constrainte horizontale",
-        "getConstraintTypeOption2ButtonSetTextToolLip": "Constrainte verticale",
-        "getConstraintTypeOption3ButtonSetTextToolLip": "Constrainte alignée",         
+        "getConstraintTypeOption1ButtonSetText": "Contrainte horizontale ",
+        "getConstraintTypeOption2ButtonSetText": "Contrainte verticale",
+        "getConstraintTypeOption3ButtonSetText": "Contrainte alignée",
+        "getConstraintTypeOption1ButtonSetTextToolLip": "Contrainte horizontale",
+        "getConstraintTypeOption2ButtonSetTextToolLip": "Contrainte verticale",
+        "getConstraintTypeOption3ButtonSetTextToolLip": "Contrainte alignée",         
         "getConstraintTypeCheckboxConflic": "Détecttion des conflits",
         "getConstraintTypeCheckboxConflicToolLip" : "Avertissement en cas de conflit de contraintes." +
             "\nDonne la possibilité d'annuler la contrainte ",  
@@ -150,8 +149,7 @@ messages = {
                      
                      
         "NoActiveSpreadsheet":"No active spreadsheet with selected cells."+
-                                            "\nSelect objects in sketch, \n"+
-                                            "and then select a cell in spreadsheet",             
+                                            "\nSelect objects in sketch, and then select a cell in spreadsheet.",             
                      
         "ConstarintConflicDetected" :"Constraints conflic detected. Cancel constraint creation?", 
         
@@ -165,7 +163,7 @@ messages = {
         "getConstraintTypeOption2ButtonSetTextToolLip": "Lenght constrainte Y",
         "getConstraintTypeOption3ButtonSetTextToolLip": "Lenght constrainte",  
         "getConstraintTypeCheckboxConflic": "Conflict detection", 
-        "getConstraintTypeCheckboxConflicToolLip" : "Warning in case of constraint conflict. Gives the possibility to cancel the constraint",
+        "getConstraintTypeCheckboxConflicToolLip" : "Warning in case of constraint conflict. Gives the possibility to cancel the constraint.",
         "getConstraintTypeWindowTitle" : "Choose a constraint type",
         "getConstraintTypeWindowTitle" : "Choose a constraint type",
         "getConstraintTypeCheckboxAlias": "Texts for Automatic alias labels for this cell, and under :", 
@@ -178,7 +176,7 @@ messages = {
     
 
 # save objects names in ini file
-#typeObject : spreadsheet, body....
+#typeObject : Spreadsheet, Body....
 def save_settings_Name(typeObject,objectName):
     config = configparser.ConfigParser()
     ini_file = os.path.join(macroDirectory, "sketchConstraintFromSpreadsheet.ini")
@@ -281,26 +279,26 @@ class Dialog(QtGui.QDialog):
         self.checkboxAlias.setToolTip(toolLip)   
         
 
-        self.textboxSpreadsheetName = QtGui.QLineEdit(getIniName('spreadsheet'))
+        self.textboxSpreadsheetName = QtGui.QLineEdit(getIniName('Spreadsheet'))
         self.textboxSpreadsheetName.setFixedWidth(200)  # size
         #self.textboxSpreadsheetName.setToolTip('Name for the spreadsheet')  
         self.textboxSpreadsheetName.setToolTip(messages[language]["DialogTextboxSpreadsheetNameTolLip"])  
 
-        self.textboxTextdocumentName = QtGui.QLineEdit(getIniName('textdocument'))
+        self.textboxTextdocumentName = QtGui.QLineEdit(getIniName('Textdocument'))
         self.textboxTextdocumentName.setFixedWidth(200)  # size
         
         #self.textboxTextdocumentName.setToolTip('Name for the Text Document')   
         self.textboxTextdocumentName.setToolTip(messages[language]["DialogTextboxTextdocumentNameToolTip"]) 
         
-        self.textboxBodyName = QtGui.QLineEdit(getIniName('body'))
+        self.textboxBodyName = QtGui.QLineEdit(getIniName('Body'))
         self.textboxBodyName.setFixedWidth(200)  # size
-        #self.textboxBodyName.setToolTip('Name for the body')    
+        #self.textboxBodyName.setToolTip('Name for the Body')    
         self.textboxBodyName.setToolTip(messages[language]["DialogTextboxBodyNameToolTip"])    
         
-        self.textboxSketchName = QtGui.QLineEdit(getIniName('sketch'))
+        self.textboxSketchName = QtGui.QLineEdit(getIniName('Sketch'))
         self.textboxSketchName.setMaximumWidth(200)  # Set the maximum width of the text box
         self.textboxSketchName.setFixedWidth(200)  # size
-        self.textboxSketchName.setToolTip('Name for the sketch')  
+        self.textboxSketchName.setToolTip('Name for the Sketch')  
         self.textboxSketchName.setToolTip(messages[language]["DialogTextboxSketchNameTolLip"]) 
    
 
@@ -529,10 +527,10 @@ class Dialog(QtGui.QDialog):
     def save_settings(self):
         save_settings_Alias(self.textboxAlias.text(),self.checkboxAlias.isChecked())
 
-        save_settings_Name('body',self.textboxBodyName.text())
-        save_settings_Name('spreadsheet', self.textboxSpreadsheetName.text())
-        save_settings_Name('textdocument', self.textboxTextdocumentName.text())
-        save_settings_Name('sketch', self.textboxSketchName.text())        
+        save_settings_Name('Body',self.textboxBodyName.text())
+        save_settings_Name('Spreadsheet', self.textboxSpreadsheetName.text())
+        save_settings_Name('Textdocument', self.textboxTextdocumentName.text())
+        save_settings_Name('Sketch', self.textboxSketchName.text())        
         
 
             
@@ -819,7 +817,7 @@ def nextCell(cell):
 
 def setAlias(aliasCellsSelect, aliasAuto):
     # If the user wants to trigger the creation of alias
-    # it is sufficient that he does not select any objects in the sketch 
+    # it is sufficient that he does not select any objects in the Sketch 
     # but select cells containing strings in the left hand column 
     # of where he want the alias to be created
     # so test if an object is selected :
@@ -832,7 +830,7 @@ def setAlias(aliasCellsSelect, aliasAuto):
     except :
         QtWidgets.QMessageBox.warning(Gui.getMainWindow(), "Warning", 
                                             # "No active spreadsheet with selected cells."+
-                                            # "\nSelect objects in sketch, \n"+
+                                            # "\nSelect objects in Sketch, \n"+
                                             # "and then select a cell in spreadsheet")                                            
                                             messages[language]["NoActiveSpreadsheet"])
         return True
@@ -864,19 +862,19 @@ def setAlias(aliasCellsSelect, aliasAuto):
             tabCells.append( cellName(item.row(), item.column())) # We retrieve the cell ID in tabCells 
 
     # we check that one of the cells is not a numeric. If not, message and exit    
-    for cell in tabCells: # The selected cells are scanned
+    # for cell in tabCells: # The selected cells are scanned
         
-        activeCellContenu = mySpreadSheet.getContents(cell)
-        f = ''
-        try :
-            f = float(activeCellContenu)
-        except :
-            pass            
-        if f != '' :
-            QtWidgets.QMessageBox.warning(Gui.getMainWindow(), 
-                "Warning", "cell: "+cell+ "\n"+"There is a number in one of the selected cells." + 
-                " Alias is not possible. \nTry again after correction")
-            return False       
+        # activeCellContenu = mySpreadSheet.getContents(cell)
+        # f = ''
+        # try :
+            # f = float(activeCellContenu)
+        # except :
+            # pass            
+        # if f != '' :
+            # QtWidgets.QMessageBox.warning(Gui.getMainWindow(), 
+                # "Warning", "cell: "+cell+ "\n"+"There is a number in one of the selected cells." + 
+                # " Alias is not possible. \nTry again after correction")
+            # return False       
         
 
         
@@ -1093,7 +1091,7 @@ class getConstraintType(QtGui.QDialog):
 
 
 #=======================================================
-# Give the focus to editing sketch window
+# Give the focus to editing Sketch window
 # no parameter
 # use : activateSketchEditingWindow()
 #=======================================================
