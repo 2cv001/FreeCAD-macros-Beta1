@@ -65,6 +65,7 @@ def getLanguage() : #'English','French',...
     return lang
     
 language = getLanguage()
+language = 'French'
 
 # use : messages[language]["NoActiveSpreadsheet"]
 
