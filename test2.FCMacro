@@ -24,7 +24,7 @@ __Name__   = "Sketch Constraint From Spreadsheet"
 __Comment__ ="A simple click on a spreadsheet cell, adds a length constraint to a line, circle, points... using a spreadsheet cell alias or address (ex. C2). The macro can create alias for you."
 __Author__ = "2cv001"
 __Title__   = "Macro Sketch Constraint From Spreadsheet"
-__Date__    = "2024/01/18"    #YYYY/MM/DD 04:07 Béta
+__Date__    = "2024/01/18"    #YYYY/MM/DD 18:33 Béta
 __Version__ = __Date__
 __Icon__    = "https://wiki.freecad.org/images/d/dc/Macro_Sketch_Constraint_From_Spreadsheet.svg"
 __Wiki__    = "https://wiki.freecad.org/Macro_sketchConstraintFromSpreadsheet"
@@ -56,7 +56,9 @@ macroDirectory = FreeCAD.getUserMacroDir(True)
 def getLanguage() : #'English','French',...
     try :
         lang=App.ParamGet("User parameter:BaseApp/Preferences/General").GetString('Language')
+        print('lang',lang)
     except :
+        print("Erreur lors de l'exécution de App.ParamGet en ligne 60")
         return 'English'    
     if lang not in ['English','French'] :
         lang = 'English'
