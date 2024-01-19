@@ -1,0 +1,63 @@
+import FreeCAD
+from PySide import QtGui
+
+def updateSpreadsheetWithAlias(cells):
+    # Obtenez le document actif
+    doc = FreeCAD.ActiveDocument
+    mySpreadsheet = Gui.ActiveDocument.ActiveView.getSheet()
+
+
+    for cell_name in cells:
+        column = cell_name[0]
+        if column=='A' :
+            print('colonne A est une valeur non possible')
+            return
+
+        # Obtenez la formule de la cellule
+        formula = mySpreadsheet.getContents(cell_name)
+
+        formula = formula[1:]         # Supprimer le ' du début
+        if not formula.startswith('@'):
+            continue
+        formula = formula[1:]    
+
+
+        # Analyser la formule pour obtenir le nom de la contrainte
+        parts = formula.split('.')
+        if len(parts) != 3  or 'Constraints' not in parts[1]:
+            print(f"La formule dans la cellule {cell_name} n'est pas dans le format attendu.")
+            continue
+        constraint_name = parts[2]
+        sketchName = parts[0]
+        sketch = App.ActiveDocument.getObject(sketchName)
+        # Obtenez la contrainte du Sketch
+        constraint = None
+        for c in sketch.Constraints:
+            if c.Name == constraint_name:
+                constraint = c
+                break
+
+        if constraint is None:
+            print(f"La contrainte {constraint_name} n'a pas été trouvée dans le Sketch.")
+            continue
+
+        # Obtenez la valeur de la contrainte
+        value = constraint.Value
+
+        # Mettez à jour la cellule à gauche avec la valeur de la contrainte
+        mySpreadsheet.set(chr(ord(column) - 1) + str(int(cell_name[1:])), str(value))
+
+    # Recalculez le document pour mettre à jour l'affichage
+    doc.recompute()
+
+
+
+aw = Gui.getMainWindow().centralWidget().activeSubWindow() # Store the active window      
+# To get list of all selected cells
+sel_items = aw.widget().findChild(QtGui.QTableView).selectedIndexes() 
+tabCells=[]
+cellName = lambda r,c:'{}{}{}'.format(chr(c//26 + 64) if c//26 > 0 else '', chr(c%26 + 65), r + 1)
+for item in sel_items: # The selected cells are scanned
+            tabCells.append( cellName(item.row(), item.column())) # We retrieve the cell ID in tabCells 
+print('tabCells',tabCells)
+updateSpreadsheetWithAlias(tabCells)
