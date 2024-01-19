@@ -1,6 +1,13 @@
 import FreeCAD
 from PySide import QtGui
 
+# peincipe : placer une formule du style @Sketch.Constraints.disty dans des cellule d'un spreadsheet
+# sélectionnez les celulles en question
+# lancez la fonction
+# la macro ira chercher les valeurs dans la contrainte nommée disty du sketch
+# et la placera dans la cellule à gauche de la formule
+# fonctionne aussi pour un autre spreadsheet avec une formule du style @Spreadsheet.aliasDuneCellule
+
 def updateSpreadsheetWithAlias(cells):
     # Obtenez le document actif
     doc = FreeCAD.ActiveDocument
@@ -24,26 +31,35 @@ def updateSpreadsheetWithAlias(cells):
 
         # Analyser la formule pour obtenir le nom de la contrainte
         parts = formula.split('.')
-        if len(parts) != 3  or 'Constraints' not in parts[1]:
+        if len(parts) < 2  :
             print(f"La formule dans la cellule {cell_name} n'est pas dans le format attendu.")
             continue
-        constraint_name = parts[2]
-        sketchName = parts[0]
-        sketch = App.ActiveDocument.getObject(sketchName)
-        # Obtenez la contrainte du Sketch
-        constraint = None
-        for c in sketch.Constraints:
-            if c.Name == constraint_name:
-                constraint = c
-                break
 
-        if constraint is None:
-            print(f"La contrainte {constraint_name} n'a pas été trouvée dans le Sketch.")
-            continue
+        objectName = parts[0]
+        
+        # l'objet à syncroniser est un Sketch
+        if App.ActiveDocument.getObject(objectName).TypeId=='Sketcher::SketchObject' :
+            constraint_name = parts[2]
+            sketch = App.ActiveDocument.getObject(objectName)
+            # Obtenez la contrainte du Sketch
+            constraint = None
+            for c in sketch.Constraints:
+                if c.Name == constraint_name:
+                    constraint = c
+                    break
 
-        # Obtenez la valeur de la contrainte
-        value = constraint.Value
+            if constraint is None:
+                print(f"La contrainte {constraint_name} n'a pas été trouvée dans le Sketch.")
+                continue
 
+            # Obtenez la valeur de la contrainte
+            value = constraint.Value
+        if App.ActiveDocument.getObject(objectName).TypeId=='Spreadsheet::Sheet' :
+            spreadsheet = App.ActiveDocument.getObject(objectName)
+            alias=parts[1]
+            value=sketch = App.ActiveDocument.getObject(objectName).getContents(alias)
+        
+        
         # Mettez à jour la cellule à gauche avec la valeur de la contrainte
         mySpreadsheet.set(chr(ord(column) - 1) + str(int(cell_name[1:])), str(value))
 
