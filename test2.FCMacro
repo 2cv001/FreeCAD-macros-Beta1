@@ -80,7 +80,7 @@ def getLanguage() :
 language = getLanguage()
 print(language)
 
-# use : messages[language]["NoActiveSpreadsheet"]
+# use : messages[language]["Values"]
 
 messages = {
     "French": {
@@ -100,12 +100,19 @@ messages = {
         
         "DialogcheckboxSketch": "Sketch",  
         "DialogTextboxSketchNameTolLip": "Nom pour les sketch", 
-        
+        'TITLE':'TITRE',
+        'Textsforalias':'Libellé des alias',
+        'Values' : 'Valeurs',
+        'OkOui':'Oui',        
         'NoPasDe':'Pas de',        
         'foundTrouve':'trouvé',
         'foundCreateOne':'trouvé, en créer un ?',
         'Cancel':'Abandon', 
-        'Warning':'Attention',        
+        'Warning':'Attention',
+        'Warning':'Warning',
+        'XYPlane':'Plan XY',
+        'XZPlane':'Plan XZ',
+        'YZPlane':'Plan YZ',        
         'ClickOnACellBefore': "Cliquez dans une cellule avec une valeur numérique avant de lancer la macro.", 
 
         "NoObjectSelected" : "Vous n'avez pas sélectionné d'objets dans le sketch actif."
@@ -152,11 +159,18 @@ messages = {
         "DialogTextboxBodyNameToolTip": "Name for the body",  
         "DialogcheckboxSketch": "Sketch",  
         "DialogTextboxSketchNameTolLip": "Name for the sketch", 
+        'TITLE':'TITLE',
+        'Textsforalias':'Texts for alias',
+        'Values' : 'Values',
+        'OkOui':'Ok',
         'NoPasDe':'No',
         'foundTrouve':'found',
         'foundCreateOne':'found, create one?',
         'Cancel':'Cancel',
         'Warning':'Warning',
+        'XYPlane':'XY Plane',
+        'XZPlane':'XZ Plane',
+        'YZPlane':'YZ Plane',
         'ClickOnACellBefore':"Click on a cell with a numeric value before runing the macro",
         
         "NoObjectSelected" : "You did not select any object in an active sketch."
@@ -348,9 +362,9 @@ class Dialog(QtGui.QDialog):
             layout_checkboxSketch.addWidget(self.checkboxSketch) 
             layout_checkboxSketch.addWidget(self.textboxSketchName)            
         
-        self.radiobutton1 = QtGui.QRadioButton("XY Plane")
-        self.radiobutton2 = QtGui.QRadioButton("XZ Plane")
-        self.radiobutton3 = QtGui.QRadioButton("YZ Plane")
+        self.radiobutton1 = QtGui.QRadioButton(messages[language]["XYPlane"])
+        self.radiobutton2 = QtGui.QRadioButton(messages[language]["XZPlane"])
+        self.radiobutton3 = QtGui.QRadioButton(messages[language]["YZPlane"])
         self.radiobutton1.setIcon(QIcon(":/icons/view-top"))  
         self.radiobutton2.setIcon(QIcon(":/icons/view-front"))     
         self.radiobutton3.setIcon(QIcon(":/icons/view-right"))          
@@ -426,6 +440,7 @@ class Dialog(QtGui.QDialog):
             QtCore.Qt.Horizontal, self)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
+        self.buttons.button(QtGui.QDialogButtonBox.Ok).setText(messages[language]["OkOui"])       
         layout.addWidget(self.buttons)
 
         self.setLayout(layout)
@@ -641,12 +656,12 @@ def addTheObjects():
             firstSpreadsheet.mergeCells('A1:B1')
             firstSpreadsheet.setAlignment('A1:B1', 'center|vcenter|vimplied')
             firstSpreadsheet.setStyle('A1:B1', 'bold')
-            firstSpreadsheet.set('A1', "TITLE")
+            firstSpreadsheet.set('A1', messages[language]["TITLE"])
             if getIniCellForAlias() :
                 cellAbove, cellRight = get_adjacent_cells(getIniCellForAlias())
                 if cellAbove != "" and cellAbove not in['A1','B1']:
-                    firstSpreadsheet.set(cellAbove, "Texts for alias")
-                    firstSpreadsheet.set(cellRight, "Values")
+                    firstSpreadsheet.set(cellAbove, messages[language]["Textsforalias"])
+                    firstSpreadsheet.set(cellRight, messages[language]["Values"])
                     firstSpreadsheet.setStyle(cellAbove, 'bold')
                     firstSpreadsheet.setStyle(cellRight, 'bold') 
                     firstSpreadsheet.recompute()
