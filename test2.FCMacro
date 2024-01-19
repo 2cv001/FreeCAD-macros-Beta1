@@ -551,6 +551,7 @@ class Dialog(QtGui.QDialog):
 
             
 # Retrieve the results after displaying the object creation dialogue box.
+###############################################################################
 def get_user_input(documentState, spreadsheetState, textdocumentState, bodyState, sketchState, text=''):
     dialog = Dialog(documentState, spreadsheetState, textdocumentState,  bodyState, sketchState, text)
     result = dialog.exec_()  # Display the dialog box and wait for the user to make their choices
@@ -1160,13 +1161,12 @@ def featuresObjSelected (mySketch, sel, numOrdreObjSelected, indexExtremite) :
             # [('Sketch', 'Edge2'), ('Sketch001', 'Edge2'), ('Sketch001', 'Edge1'), ('Sketch', 'Edge1')]
             tabExternalGeomery.append((item[0].Name, objName))
         
-    if itemName == 'RootPoint' :
-        typeInSubElementName = 'RootPoint'
+    if itemName in ['V_Axis', 'H_Axis', 'RootPoint'] :
+        typeInSubElementName = itemName
         indexObjectHavingPoint = -1
         typeIdGeometry = mySketch.Geometry[indexObjectHavingPoint].TypeId
         x, y = 0, 0
-    else :
-        # for Edge5, typeInSubElementName ->'Edge' and '5'
+    else : 
         typeInSubElementName, numInNameStr = [''.join(c) for _, c in itertools.groupby(itemName, str.isalpha)] 
         numInName = int(numInNameStr)
 
@@ -1381,8 +1381,6 @@ def main():
     ci = lambda :Gui.getMainWindow().centralWidget().activeSubWindow().widget().findChild(QtGui.QTableView).currentIndex()
     cellCode = '{}{}{}'.format(chr(ci().column()//28 + 64) if ci().column()//26 > 0 else '', chr(ci().column()%26 + 65), ci().row() + 1)
 
- # ajouter un controle
- #si cellCode est bien à droite des cellules avec alias ou pas
 
     try:
         if sels[0].Object.TypeId not in ['Part::Part2DObjectPython'] :  # ShapeString
@@ -1435,8 +1433,8 @@ def main():
             (typeIdGeometry2,typeInSubElementName2, indexObjectHavingPoint2, indexExtremiteLine2, 
             x2 ,y2, isInternalObject2) = featuresObjSelected (ActiveSketch, sels[0], 1, 1)
 
-            if ((typeInSubElementName1 not in ('Vertex', 'RootPoint', 'ExternalEdge') \
-                or typeInSubElementName2 not in ('Vertex', 'RootPoint', 'ExternalEdge'))
+            if ((typeInSubElementName1 not in ('Vertex', 'V_Axis', 'H_Axis', 'RootPoint', 'ExternalEdge') \
+                or typeInSubElementName2 not in ('Vertex', 'V_Axis', 'H_Axis', 'RootPoint', 'ExternalEdge'))
                     and not(typeIdGeometry1 in ('Part::GeomCircle', 'Part::GeomArcOfCircle') \
                     and typeInSubElementName1 in ['Edge'])) :
                 QtWidgets.QMessageBox.information(None, messages[language]["Warning"], "2 objects are selected but not 2 points .\n" + 
@@ -1464,14 +1462,23 @@ def main():
         # ask the user what kind of constraint he wants
         #------------------------------------------------
         form = getConstraintType(buttonHavingFocus)
-        form.exec_()
-               
-        # conflict : is the checkboxSheced?
+                    # conflict : is the checkboxSheced?
         sheckBoxConstraintConflicState = form.getCheckBoxState()
-        if form.choiceConstraint in ('Cancel', '') :
-            activateSketchEditingWindow()
-            return
-        myConstraint = form.choiceConstraint # 'DistanceX' or 'DistanceY' or 'Distance'
+        
+        if typeInSubElementName1 in ['V_Axis'] or typeInSubElementName2 in ['V_Axis'] :
+            print ('typeInSubElementName1,typeInSubElementName1',typeInSubElementName1,typeInSubElementName2)
+            myConstraint='DistanceX'
+        elif typeInSubElementName1 in ['H_Axis'] or typeInSubElementName2 in ['H_Axis'] :
+            print ('typeInSubElementName1,typeInSubElementName1',typeInSubElementName1,typeInSubElementName2)
+            myConstraint='DistanceY'
+        else : 
+            form.exec_()                   
+            # conflict : is the checkboxSheced?
+            sheckBoxConstraintConflicState = form.getCheckBoxState()
+            if form.choiceConstraint in ('Cancel', '') :
+                activateSketchEditingWindow()
+                return
+            myConstraint = form.choiceConstraint # 'DistanceX' or 'DistanceY' or 'Distance'
 
         if (myConstraint == 'DistanceX' and x1 > x2) or  (myConstraint == 'DistanceY' and y1 > y2) :
                 indexObjectHavingPoint1, indexObjectHavingPoint2 = indexObjectHavingPoint2, indexObjectHavingPoint1
@@ -1481,7 +1488,7 @@ def main():
 
      
 
-    if getIniCheckboxStateForAlias() : ################################################################################################################""
+    if getIniCheckboxStateForAlias() : 
         setAlias(False,True)
 
     cellAlias = App.ActiveDocument.getObject(mySpreadSheetName).getAlias(cellCode)
@@ -1535,7 +1542,6 @@ def main():
     # put Sketch window ahead
     activateSketchEditingWindow()
     FreeCADGui.Selection.clearSelection()
-    # FreeCAD.ActiveDocument.recompute()
     ActiveSketch.touch()
     ActiveSketch.recompute()
     #if Gui.ActiveDocument.getInEdit() == Gui.ActiveDocument.Sketch:
@@ -1564,5 +1570,6 @@ def main():
         
 if __name__ == '__main__':
     main()
+
 
 
