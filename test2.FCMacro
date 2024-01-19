@@ -24,7 +24,7 @@ __Name__   = "Sketch Constraint From Spreadsheet"
 __Comment__ ="A simple click on a spreadsheet cell, adds a length constraint to a line, circle, points... using a spreadsheet cell alias or address (ex. C2). The macro can create alias for you."
 __Author__ = "2cv001"
 __Title__   = "Macro Sketch Constraint From Spreadsheet"
-__Date__    = "2024/01/18"    #YYYY/MM/DD 18:33 Béta
+__Date__    = "2024/01/19"    #YYYY/MM/DD 12:10 Béta
 __Version__ = __Date__
 __Icon__    = "https://wiki.freecad.org/images/d/dc/Macro_Sketch_Constraint_From_Spreadsheet.svg"
 __Wiki__    = "https://wiki.freecad.org/Macro_sketchConstraintFromSpreadsheet"
@@ -39,6 +39,7 @@ import os
 import FreeCAD
 import re
 import itertools
+import locale
 
 
 
@@ -53,19 +54,31 @@ macroDirectory = FreeCAD.getUserMacroDir(True)
 # print(messages[langue]["message2"])
 
 
-def getLanguage() : #'English','French',...
-    try :
-        lang=App.ParamGet("User parameter:BaseApp/Preferences/General").GetString('Language')
-        print('lang',lang)
-    except :
-        print("Erreur lors de l'exécution de App.ParamGet en ligne 60")
-        return 'English'    
-    if lang not in ['English','French'] :
+def getLanguage() : 
+    # Dictionary of common languages
+    common_languages = {
+        'en': 'English',
+        'fr': 'French',
+    }
+
+    lang = App.ParamGet("User parameter:BaseApp/Preferences/General").GetString('Language')
+
+    if not lang :   # if App.ParamGet found nothing
+        print('not found')
+        # Get the system language
+        system_language = locale.getlocale()[0][:2]
+        print ('system_language ', system_language)
+        if system_language in common_languages:
+            lang = common_languages[system_language]
+        
+    if lang not in common_languages.values() :
         lang = 'English'
     return lang
+
+
     
 language = getLanguage()
-language = 'French'
+print(language)
 
 # use : messages[language]["NoActiveSpreadsheet"]
 
@@ -831,7 +844,7 @@ def setAlias(aliasCellsSelect, aliasAuto):
     try :
         mySpreadSheet = Gui.ActiveDocument.ActiveView.getSheet()
     except :
-        QtWidgets.QMessageBox.warning(Gui.getMainWindow(), "Warning", 
+        QtWidgets.QMessageBox.warning(Gui.getMainWindow(),messages[language]["Warning"], 
                                             # "No active spreadsheet with selected cells."+
                                             # "\nSelect objects in Sketch, \n"+
                                             # "and then select a cell in spreadsheet")                                            
@@ -864,23 +877,7 @@ def setAlias(aliasCellsSelect, aliasAuto):
         for item in sel_items: # The selected cells are scanned
             tabCells.append( cellName(item.row(), item.column())) # We retrieve the cell ID in tabCells 
 
-    # we check that one of the cells is not a numeric. If not, message and exit    
-    # for cell in tabCells: # The selected cells are scanned
-        
-        # activeCellContenu = mySpreadSheet.getContents(cell)
-        # f = ''
-        # try :
-            # f = float(activeCellContenu)
-        # except :
-            # pass            
-        # if f != '' :
-            # QtWidgets.QMessageBox.warning(Gui.getMainWindow(), 
-                # "Warning", "cell: "+cell+ "\n"+"There is a number in one of the selected cells." + 
-                # " Alias is not possible. \nTry again after correction")
-            # return False       
-        
-
-        
+       
     changed=False    
     for cell in tabCells: # The selected cells are scanned     
         next_cell=nextCell(cell)# cell at the right
@@ -897,13 +894,7 @@ def setAlias(aliasCellsSelect, aliasAuto):
         except ValueError: # If a "ValueError" is triggered (which happens when the alias is not valid)
             # The user is warned in the report
             App.Console.PrintWarning("Can't set alias for cell {} : {} isn't valid\n".format(next_cell, alias))
-    # if not changed and getIniCheckboxStateForAlias():
-        # QtWidgets.QMessageBox.warning(Gui.getMainWindow(), 
-                # "Warning","No alias have been created. Be sure to have the name of the alias under cell "+getIniCellForAlias()
-                # + '\nand a numeric value in the next column. Select the case with the numeric value.' )
-    
-    # if  getIniCheckboxStateForAlias() :   # checked => create alias but continue (False)
-        # return False # the macro continue
+
     # else :
         # return True
     return False
@@ -1320,25 +1311,10 @@ def main():
     sels = Gui.Selection.getSelectionEx() 
 
     if not(len(sels) != 0 and len(sels[0].SubElementNames) != 0) : # nothing selected
-        #print('Anything selected')
-        
-        ### Ask if the user is sure
-        # if getIniCheckboxStateForAlias() :
-            # message=('Do you want to create alias automatically for cells at the right '
-            # +'of cells '+  getIniCellForAlias()+' and under?')
-        # else :
-        # message=("You did not select any object in an active sketch"
-             # + "\nDoes it mean you want to create alias at the right of selected cells "
-             # + "using text in selected cells ?" ) 
-        
         message=(messages[language]["NoObjectSelected"]) 
-
-
-
-
         if QtGui.QMessageBox.warning(Gui.getMainWindow(),
-        'Warning', message,
-        QtGui.QMessageBox.Ok | QtGui.QMessageBox.Cancel) == QtGui.QMessageBox.Cancel: 
+            messages[language]["Warning"], message,
+            QtGui.QMessageBox.Ok | QtGui.QMessageBox.Cancel) == QtGui.QMessageBox.Cancel: 
             # if user don't want
             return True 
         setAlias(True,False) 
@@ -1349,7 +1325,7 @@ def main():
     except :
 
   
-        QtWidgets.QMessageBox.warning(Gui.getMainWindow(), "Warning", 
+        QtWidgets.QMessageBox.warning(Gui.getMainWindow(), messages[language]["Warning"], 
                                             # "No active spreadsheet with selected cells."+
                                             # "\nSelect objects in sketch, \n"+
                                             # "and then select a cell in spreadsheet")                                            
@@ -1376,7 +1352,7 @@ def main():
         mySketch = ActiveSketch
     except :
         if myPadOrPocket==None :
-            QtWidgets.QMessageBox.information(None, "Warning", 
+            QtWidgets.QMessageBox.information(None, messages[language]["Warning"], 
                 "Select object (point, line...) in the sketch in edition mode")
             # activateSketchEditingWindow()
             return    
@@ -1390,7 +1366,7 @@ def main():
     try :
         mySpreadSheet = Gui.ActiveDocument.ActiveView.getSheet()
     except :
-        QtWidgets.QMessageBox.information(None, "Warning",
+        QtWidgets.QMessageBox.information(None, messages[language]["Warning"],
                 "1- Select a line or 2 points" + 
                 "\n 2- go to a spreadsheet" + 
                 "\n 3- select the cell containing the value." + 
@@ -1427,12 +1403,12 @@ def main():
     sels = Gui.Selection.getSelectionEx()
 
     if (len(sels) == 0 or len(sels[0].SubElementNames) == 0) and myPadOrPocket==None : 
-        QtWidgets.QMessageBox.information(None, "Warning", "Anything is select.\n" + 
+        QtWidgets.QMessageBox.information(None, messages[language]["Warning"], "Anything is select.\n" + 
               "Select 1 line, 2 points or a constraint in a sketch before selecting a cell in the spreadsheet")
         activateSketchEditingWindow()
         return
     elif len(sels[0].SubElementNames) > 2  :
-        QtWidgets.QMessageBox.information(None, "Warning", "Too many objects selected.\n" + 
+        QtWidgets.QMessageBox.information(None, messages[language]["Warning"], "Too many objects selected.\n" + 
               "Select 1 line, 2 points or a constraint in a sketch before selecting a cell in the spreadsheet")
         activateSketchEditingWindow()
         return
@@ -1463,7 +1439,7 @@ def main():
                 or typeInSubElementName2 not in ('Vertex', 'RootPoint', 'ExternalEdge'))
                     and not(typeIdGeometry1 in ('Part::GeomCircle', 'Part::GeomArcOfCircle') \
                     and typeInSubElementName1 in ['Edge'])) :
-                QtWidgets.QMessageBox.information(None, "Warning", "2 objects are selected but not 2 points .\n" + 
+                QtWidgets.QMessageBox.information(None, messages[language]["Warning"], "2 objects are selected but not 2 points .\n" + 
                 "Select 1 line, 2 points or a constraint in a sketch before selecting a cell in the spreadsheet")
                 activateSketchEditingWindow()
                 return
@@ -1503,37 +1479,18 @@ def main():
                 isInternalObject1, isInternalObject2 = isInternalObject2, isInternalObject1
                 x1, x2, y1, y2 = x2, x1, y2, y1
 
-
-    # if column!=get_next_column(get_column(getIniCellForAlias())) and getIniCheckboxStateForAlias():
-        # get_user_input("no", "no", "no", "no", "no","In spreadsheet, a value have been selected in a wrong cell."+
-               # " \nPut the alias name in column "+get_column(getIniCellForAlias())+ " in cell "+ getIniCellForAlias() +
-                # " or under \nand value in cell to the right in column "+ get_column(nextCell(getIniCellForAlias()))+
-                # ". \n\nSelect the cell with value before running the macro " +
-                 # "\n\n Otherwise, change the value below or uncheck the box . ")
-        # return
-        
+     
 
     if getIniCheckboxStateForAlias() : ################################################################################################################""
         setAlias(False,True)
 
     cellAlias = App.ActiveDocument.getObject(mySpreadSheetName).getAlias(cellCode)
-    # if cellAlias == None and getIniCheckboxStateForAlias():  
-        # get_user_input("no", "no", "no", "no", "no","In spreadsheet, a value have been selected in a cell without alias." +    
-               # " \nPut the alias name in column " + get_column(getIniCellForAlias())+ " in cell "+ getIniCellForAlias() +
-                # " or under \nand value in cell to the right in column "+ get_column(nextCell(getIniCellForAlias()))+
-                # ". \n\nSelect the cell with value before running the macro " +
-                 # "\n\n Otherwise, change the value below or uncheck the box . ")
-        # return
-    
+
     
     # create constraint
     #=================================
     # get value for constraint 
     cellAlias = App.ActiveDocument.getObject(mySpreadSheetName).getAlias(cellCode)
-    # if cellAlias == None :
-        # cellExpression = mySpreadSheetName + '.' + cellCode
-    # else :
-        # cellExpression = mySpreadSheetName + '.' + cellAlias
         
     if cellAlias == None :
         cellExpression = '<<' + mySpreadSheetLabel + '>>' + '.' + cellCode
