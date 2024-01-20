@@ -1,0 +1,90 @@
+import FreeCAD, FreeCADGui
+from PySide import QtGui
+
+
+import FreeCAD, FreeCADGui
+
+def create_alias_for_cells(spreadsheet, cells):
+    for cell in cells:
+        # Use a regular expression to separate the letters and numbers
+        match = re.match(r"([a-z]+)([0-9]+)", cell, re.I)
+        if match:
+            items = match.groups()
+        else:
+            return
+
+        # Retrieve the letter and number of the cell
+        letter = items[0].upper()
+        number = int(items[1])
+
+        # Create the cell name
+        cell_name = letter + str(number)
+
+        # Create the alias name
+        alias_name = 'valeur' + str(number) + '_'+letter
+
+        # Set the alias for the cell
+        spreadsheet.setAlias(cell_name, alias_name)
+
+
+
+def createAliasForTable(range_str):
+
+    mySpreadsheet = Gui.ActiveDocument.ActiveView.getSheet()   
+    start_cell, end_cell = range_str.replace(':', ',').split(',')
+
+    # Use a regular expression to separate the letters and numbers
+    match_start = re.match(r"([a-z]+)([0-9]+)", start_cell, re.I)
+    match_end = re.match(r"([a-z]+)([0-9]+)", end_cell, re.I)
+
+    if match_start and match_end:
+        items_start = match_start.groups()
+        items_end = match_end.groups()
+    else:
+        return
+
+    # Retrieve the letter and number of the start and end cells
+    start_letter = items_start[0].upper()
+    start_number = int(items_start[1])
+    end_letter = items_end[0].upper()
+    end_number = int(items_end[1])
+
+    # Iterate over the range of cells
+    for i in range(start_number, end_number + 1):
+        for j in range(ord(start_letter) - ord('A') + 1, ord(end_letter) - ord('A') + 2):
+            # Convert the column number to a letter
+            col_letter = chr(j + ord('A') - 1)
+            # Create the cell name
+            cell_name = col_letter + str(i)
+            # Create the alias name
+            alias_name = 'valeur' + str(i) + '_'+col_letter
+            # Set the alias for the cell
+            mySpreadsheet.setAlias(cell_name, alias_name)
+
+
+
+def create_alias_for_table_cells_Selected():
+
+    mySpreadsheet = Gui.ActiveDocument.ActiveView.getSheet()    
+    aw = Gui.getMainWindow().centralWidget().activeSubWindow() # Store the active window      
+    # To get list of all selected cells
+    sel_items = aw.widget().findChild(QtGui.QTableView).selectedIndexes() 
+
+    tabCells=[]
+    cellName = lambda r,c:'{}{}{}'.format(chr(c//26 + 64) if c//26 > 0 else '', chr(c%26 + 65), r + 1)
+    
+    for item in sel_items: # The selected cells are scanned
+            tabCells.append( cellName(item.row(), item.column())) # We retrieve the cell ID in tabCells 
+    create_alias_for_cells(mySpreadsheet,tabCells)
+    
+
+def main():
+    create_alias_for_table_cells_Selected()
+    #createAliasForTable('D2:E3')
+
+if __name__ == '__main__':
+    main()
+
+
+
+
