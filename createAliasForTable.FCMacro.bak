@@ -1,5 +1,6 @@
 import FreeCAD, FreeCADGui
 from PySide import QtGui
+import re
 
 
 import FreeCAD, FreeCADGui
