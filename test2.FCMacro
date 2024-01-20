@@ -51,8 +51,6 @@ macroDirectory = FreeCAD.getUserMacroDir(True)
 
 # # Utiliser les messages
 # print(messages[langue]["message1"])
-# print(messages[langue]["message2"])
-
 
 def getLanguage() : 
     # Dictionary of common languages
@@ -64,13 +62,9 @@ def getLanguage() :
     lang = App.ParamGet("User parameter:BaseApp/Preferences/General").GetString('Language')
 
     if not lang :   # if App.ParamGet found nothing
-        print('not found')
-        # Get the system language
         system_language = locale.getlocale()[0][:2]
-        print ('system_language ', system_language)
         if system_language in common_languages:
-            lang = common_languages[system_language]
-        
+            lang = common_languages[system_language]        
     if lang not in common_languages.values() :
         lang = 'English'
     return lang
@@ -78,7 +72,6 @@ def getLanguage() :
 
     
 language = getLanguage()
-print(language)
 
 # use : messages[language]["Values"]
 
@@ -112,7 +105,21 @@ messages = {
         'Warning':'Warning',
         'XYPlane':'Plan XY',
         'XZPlane':'Plan XZ',
-        'YZPlane':'Plan YZ',        
+        'YZPlane':'Plan YZ', 
+
+        'referenceNoName':
+        'La contrainte que vous avez sélectionnée est une contrainte de type référence'+
+                    "\n elle n a pas de nom. Voulez-vous que la macro lui en donne "+
+                    "\n et voulez-vous que la cellule contienne la valeur de la contrainte ?"+
+                    "\n ATTENTION, vérifiez que vous n'allez pas créer une référence circulaire."+
+                    "\n\nIl se peut que PENDING apparaisse dans la cellule. La valeur apparaitra au premier calcul",
+        'referenceWithName' :
+        'La contrainte que vous avez sélectionnée est une contrainte de type référence'+
+                    "\n\n voulez-vous que la cellule contienne la valeur de la contrainte ?"+
+                    "\n ATTENTION, vérifiez que vous n'allez pas créer une référence circulaire."+
+                    "\n\nIl se peut que PENDING apparaisse dans la cellule. La valeur apparaitra au premier calcul", 
+
+        
         'ClickOnACellBefore': "Cliquez dans une cellule avec une valeur numérique avant de lancer la macro.", 
 
         "NoObjectSelected" : "Vous n'avez pas sélectionné d'objets dans le sketch actif."
@@ -734,8 +741,8 @@ premierCaractereEnMinuscule = False # Force the first character to be in lower c
 # list of characters to be replaced by an equivalent. for example an @ will be replaced by 'a'
 # if you add characters, please send me a private message. Il will eventually add it in my code.
 caracEquivalents = [ ['é','e'],['è','e'],['à','a'],['@','a'],['&','e'],['ç','c'],
-                  ['²','2'],["'",''],['?',''],['"',''],['(',''],[')',''],['#',''],
-                  ['$',''],['+',''],['-',''],['*',''],['/',''],['\\',''] ]
+                  ['²','2'],["'",''],['?',''],['"',''],['(',''],[')',''],['#',''],['.',''],
+                  [',',''],[';',''],['$',''],['+',''],['-',''],['*',''],['/',''],['\\',''] ]
                   
 
 
@@ -781,6 +788,38 @@ def traitementChaineSource(chaineSource, separateur, nouveauCaract, majuscule):
     return chaineResult
 
 
+# def get_adjacent_cells(cell):
+    # # Use a regular expression to separate the letters and numbers
+    # match = re.match(r"([a-z]+)([0-9]+)", cell, re.I)
+    # if match:
+        # items = match.groups()
+    # else:
+        # return None, None
+
+    # # Retrieve the letter and number of the cell
+    # letter = items[0]
+    # number = int(items[1])
+
+    # # If the cell is in the first row, return an empty string
+    # if number == 1:
+        # return "", ""
+
+    # # Calculate the cell above
+    # above = letter + str(number - 1)
+
+    # # Calculate the cell to the right
+    # # Handle the case where the letter is "Z" or "z"
+    # if letter.lower() == 'z':
+        # right = 'a' + str(number - 1)
+    # else:
+        # right = chr(ord(letter[-1]) + 1) + str(number - 1)
+        # if len(letter) > 1:
+            # right = letter[:-1] + right
+
+    # return above, right
+
+
+
 def get_adjacent_cells(cell):
     # Use a regular expression to separate the letters and numbers
     match = re.match(r"([a-z]+)([0-9]+)", cell, re.I)
@@ -788,28 +827,29 @@ def get_adjacent_cells(cell):
         items = match.groups()
     else:
         return None, None
-
     # Retrieve the letter and number of the cell
-    letter = items[0]
+    letter = items[0].upper()
     number = int(items[1])
-
     # If the cell is in the first row, return an empty string
     if number == 1:
         return "", ""
-
     # Calculate the cell above
     above = letter + str(number - 1)
 
-    # Calculate the cell to the right
-    # Handle the case where the letter is "Z" or "z"
-    if letter.lower() == 'z':
-        right = 'a' + str(number - 1)
-    else:
-        right = chr(ord(letter[-1]) + 1) + str(number - 1)
-        if len(letter) > 1:
-            right = letter[:-1] + right
+    # Calculate the cell above to the right
+    right = ""
+    for char in reversed(letter):
+        if char != 'Z':
+            right = chr(ord(char) + 1) + right
+            break
+        else:
+            right = 'A' + right
+    if not any(char != 'Z' for char in letter):
+        right = 'A' + right
+    right += str(number-1)
 
     return above, right
+
 
 
 def get_column(cell):
@@ -822,18 +862,33 @@ def get_row(cell):
         row='1'
     return int(row)  
 
+
+
+
 def get_next_column(column):
-    # Check the last character of the column
-    last_char = column[-1]
+    column = list(column)
+
+    for i in range(len(column)-1, -1, -1):
+        if column[i] != 'Z':
+            column[i] = chr(ord(column[i]) + 1)
+            break
+        else:
+            column[i] = 'A' if i != 0 else 'AA'    
+    return ''.join(column)
+
+
+def get_previous_column(column):
+    column = list(column)
+
+    for i in range(len(column)-1, -1, -1):
+        if column[i] != 'A':
+            column[i] = chr(ord(column[i]) - 1)
+            break
+        else:
+            column[i] = 'Z' if i != 0 else ''
     
-    if last_char != 'Z':
-        # If the last character is not 'Z', just increment this character
-        next_column = column[:-1] + chr(ord(last_char) + 1)
-    else:
-        # If the last character is 'Z', add an 'A' to the end of the column
-        next_column = column + 'A' if column != 'Z' else 'AA'
-    
-    return next_column
+    return ''.join(column)
+
 
 def nextCell(cell):
     colonne, ligne = re.match(r"([A-Z]+)([0-9]+)", cell).groups()
@@ -858,7 +913,7 @@ def setAlias(aliasCellsSelect, aliasAuto):
     sels = Gui.Selection.getSelectionEx() 
       
     try :
-        mySpreadSheet = Gui.ActiveDocument.ActiveView.getSheet()
+        mySpreadsheet = Gui.ActiveDocument.ActiveView.getSheet()
     except :
         QtWidgets.QMessageBox.warning(Gui.getMainWindow(),messages[language]["Warning"], 
                                             # "No active spreadsheet with selected cells."+
@@ -884,7 +939,7 @@ def setAlias(aliasCellsSelect, aliasAuto):
         rowStartAlias=get_row(sellStart)
         for i in range(rowStartAlias, 20000):
             try :
-                activeCellContenu = mySpreadSheet.getContents(columnTextAlias+format(i))
+                activeCellContenu = mySpreadsheet.getContents(columnTextAlias+format(i))
                 tabCells.append(columnTextAlias+format(i))
             except :
                 break
@@ -897,15 +952,15 @@ def setAlias(aliasCellsSelect, aliasAuto):
     changed=False    
     for cell in tabCells: # The selected cells are scanned     
         next_cell=nextCell(cell)# cell at the right
-        activeCellContenu = mySpreadSheet.getContents(cell)
+        activeCellContenu = mySpreadsheet.getContents(cell)
         # processing the character string contained in the cell
         activeCellContenu = traitementChaineSource(activeCellContenu, separateur, nouveauCaract, majuscule)
         if changeTexteCellule:# if the changeCellText parameter is set to True then we replace the text in the cell
-            mySpreadSheet.set(cell, activeCellContenu)
+            mySpreadsheet.set(cell, activeCellContenu)
         alias = activeCellContenu
         try: # Bloc try to recover errors
             if alias!='' :
-                mySpreadSheet.setAlias(next_cell, alias) # The alias is assigned to the right-hand neighbouring cell
+                mySpreadsheet.setAlias(next_cell, alias) # The alias is assigned to the right-hand neighbouring cell
                 changed=True
         except ValueError: # If a "ValueError" is triggered (which happens when the alias is not valid)
             # The user is warned in the report
@@ -1336,7 +1391,7 @@ def main():
         return
 
     try :
-        mySpreadSheet = Gui.ActiveDocument.ActiveView.getSheet()
+        mySpreadsheet = Gui.ActiveDocument.ActiveView.getSheet()
     except :
 
   
@@ -1379,7 +1434,7 @@ def main():
     for sheet in sheets :
         Gui.Selection.removeSelection(FreeCAD.ActiveDocument.Name, sheet.Name)
     try :
-        mySpreadSheet = Gui.ActiveDocument.ActiveView.getSheet()
+        mySpreadsheet = Gui.ActiveDocument.ActiveView.getSheet()
     except :
         QtWidgets.QMessageBox.information(None, messages[language]["Warning"],
                 "1- Select a line or 2 points" + 
@@ -1388,10 +1443,10 @@ def main():
                 "\n 4- stay in the spreadsheet and launch the macro")
         activateSketchEditingWindow()
         return
-    mySpreadSheetName = mySpreadSheet.Name
-    mySpreadSheetLabel = mySpreadSheet.Label
+    mySpreadSheetName = mySpreadsheet.Name
+    mySpreadSheetLabel = mySpreadsheet.Label
     # select the Spreadsheet To be able to retrieve the selected cell :
-    mySpreadSheet.ViewObject.doubleClicked()
+    mySpreadsheet.ViewObject.doubleClicked()
     # retrieve the selected cell
     ci = lambda :Gui.getMainWindow().centralWidget().activeSubWindow().widget().findChild(QtGui.QTableView).currentIndex()
     cellCode = '{}{}{}'.format(chr(ci().column()//28 + 64) if ci().column()//26 > 0 else '', chr(ci().column()%26 + 65), ci().row() + 1)
@@ -1399,7 +1454,7 @@ def main():
 
     try:
         if sels[0].Object.TypeId not in ['Part::Part2DObjectPython'] :  # ShapeString
-            cellContents = float(mySpreadSheet.get(cellCode))
+            cellContents = float(mySpreadsheet.get(cellCode))
     except:
         QtWidgets.QMessageBox.information(None, messages[language]["Warning"],
                  messages[language]["ClickOnACellBefore"])
@@ -1480,15 +1535,13 @@ def main():
                     # conflict : is the checkboxSheced?
         sheckBoxConstraintConflicState = form.getCheckBoxState()
         
-        if typeInSubElementName1 in ['V_Axis'] or typeInSubElementName2 in ['V_Axis'] :
-            print ('typeInSubElementName1,typeInSubElementName1',typeInSubElementName1,typeInSubElementName2)
+        if   typeInSubElementName1 in ['V_Axis'] or typeInSubElementName2 in ['V_Axis'] :
             myConstraint='DistanceX'
         elif typeInSubElementName1 in ['H_Axis'] or typeInSubElementName2 in ['H_Axis'] :
-            print ('typeInSubElementName1,typeInSubElementName1',typeInSubElementName1,typeInSubElementName2)
             myConstraint='DistanceY'
         else : 
-            form.exec_()                   
-            # conflict : is the checkboxSheced?
+            form.exec_()  #open dialog box                 
+            # conflict : is the checkbox Shecked?
             sheckBoxConstraintConflicState = form.getCheckBoxState()
             if form.choiceConstraint in ('Cancel', '') :
                 activateSketchEditingWindow()
@@ -1552,8 +1605,40 @@ def main():
     if  len(sels[0].SubElementNames) == 1 and not isInternalObject1 \
         or len(sels[0].SubElementNames) == 2 and not isInternalObject1 and not isInternalObject2 :
         mySketch.setDriving(indexConstraint, False)  # External edge constraint is a reference
-    else : # set the constraint'formula' (ex : 'spreadSheet.unAlias')
+    elif mySketch.Constraints[indexConstraint].Driving : # not a reference constraint
+        # set the constraint'formula' (ex : 'spreadSheet.unAlias')
         mySketch.setExpression('Constraints[' + str(indexConstraint) + ']', cellExpression)
+        
+    elif not mySketch.Constraints[indexConstraint].Driving : # it is a reference constraint
+        # on va mettre dans la cellule du spreadsheet la formule pour récupérer la valeur de la contrainte
+        # par exemple =href(Sketch.Constraints.Distance)
+        print("The constrtaints is a reference one")
+        
+        if mySketch.Constraints[indexConstraint].Name == '' :
+            
+            message=('La contrainte que vous avez sélectionnée est une contrainte de type référence'+
+                    "\n elle n a pas de nom. Voulez-vous que la macro lui en donne "+
+                    "\n et voulez-vous que la cellule contienne la valeur de la contrainte ?"+
+                    "\n ATTENTION, vérifiez que vous n'allez pas créer une référence circulaire."+
+                    "\n\nIl se peut que PENDING apparaisse dans la cellule. La valeur apparaitra au premier calcul")        
+        else :  
+            message=('La contrainte que vous avez sélectionnée est une contrainte de type référence'+
+                    "\n\n voulez-vous que la cellule contienne la valeur de la contrainte ?"+
+                    "\n ATTENTION, vérifiez que vous n'allez pas créer une référence circulaire."+
+                    "\n\nIl se peut que PENDING apparaisse dans la cellule. La valeur apparaitra au premier calcul")        
+                    
+        if QtGui.QMessageBox.warning(Gui.getMainWindow(),
+            messages[language]["Warning"], message,
+            QtGui.QMessageBox.Ok | QtGui.QMessageBox.Cancel) == QtGui.QMessageBox.Ok: 
+            # if user  want
+            print('ok je fais')
+            mySketch.renameConstraint(indexConstraint,mySketch.Name + '_'+str(indexConstraint)+ '_'+ now.strftime("%S"))
+
+        # nommer la contrainte
+        mySpreadsheet.set(cellCode, '=href('+mySketch.Name+'.Constraints.'+mySketch.Constraints[indexConstraint].Name + ')')       
+        App.ActiveDocument.recompute()
+        App.ActiveDocument.recompute()
+        
     # put Sketch window ahead
     activateSketchEditingWindow()
     FreeCADGui.Selection.clearSelection()
