@@ -1,3 +1,10 @@
+__Name__   = "Create alias for table"
+__Comment__ =""
+__Author__ = "2cv001"
+__Title__   = "Macro Create Alias For Table
+__Date__    = "2024/01/20"    #YYYY/MM/DD 15:14 Béta
+__Version__ = __Date__
+
 import FreeCAD, FreeCADGui
 from PySide import QtGui
 import re
