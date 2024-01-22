@@ -122,12 +122,14 @@ def create_alias_for_table_cells_Selected():
             textAlias =  str(textLine) + '_'  + str(textColumn)
             textAlias=traitementChaineSource(textAlias, separateur, nouveauCaract, majuscule)
             if addNumberIfOther :
-                for i in range(1, 201):
+                startIndexForTextAlias=1
+                for i in range(startIndexForTextAlias, 201):
                     try:
                         if i == 1:
                             mySpreadsheet.setAlias(cellName, textAlias)
                         else:
                             mySpreadsheet.setAlias(cellName, textAlias + '_' + str(i-1))
+                            startIndexForTextAlias=i+1    
                         break  # Arrête la boucle si aucune exception n'est levée
                     except:
                         continue  # Passe à l'itération suivante si une exception est levée
