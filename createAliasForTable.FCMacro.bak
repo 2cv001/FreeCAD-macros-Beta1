@@ -7,8 +7,6 @@ __Version__ = __Date__
 
 
 
-
-
 import FreeCAD, FreeCADGui
 from PySide import QtGui
 import re
@@ -34,6 +32,66 @@ def generate_column_names():
         columns.append(chr((i-1)//26+64) + chr((i-1)%26+65))
     return columns
 
+
+#################################################################################
+# part code for alias
+#################################################################################
+# parameters for alias creation
+separateur = " "      # typically put " " so blanks will be replaced by nouveauCaract
+nouveauCaract = ''    #Put for example "_" to have the separators replaced by "_". Put "" to have no separator
+majuscule = True      #set to True if you want  "Diametre du cercle" to be "DiametreDuCercle"
+changeTexteCellule = False  # the text will only be changed if changeCellText is True. 
+                          # This does not change anything for the allias itself
+premierCaractereEnMinuscule = False # Force the first character to be in lower case
+
+# list of characters to be replaced by an equivalent. for example an @ will be replaced by 'a'
+# if you add characters, please send me a private message. Il will eventually add it in my code.
+caracEquivalents = [ ['é','e'],['è','e'],['à','a'],['@','a'],['&','e'],['ç','c'],
+                  ['²','2'],["'",''],['?',''],['"',''],['(',''],[')',''],['#',''],['.',''],
+                  [',',''],[';',''],['$',''],['+',''],['-',''],['*',''],['/',''],['\\',''] ]
+                  
+
+
+
+def traitementChaineSource(chaineSource, separateur, nouveauCaract, majuscule):
+# If separator is ' ' and nouveauCaract is '_', and majuscule is True
+# transforms "Diametre du cylindre" into "Diametre_Du_Cylindre
+
+    def remplaceCararcDansMot(mot):
+
+        def remplaceCartatParEquivalent(caractere):
+        # replaces a character with its equivalent if it exists
+            caracResult = caractere   
+            for couple in caracEquivalents:
+                if (couple[0] == caractere):
+                    caracResult = couple[1]
+                    break
+            return caracResult
+
+    #replaces all characters of the word with its equivalent if it exists
+        motResult = mot
+        for caract in mot:
+            a = remplaceCartatParEquivalent(caract)
+            motResult = motResult.replace(caract, a)
+        return motResult
+        
+
+    chaineResult = ''
+    first = True
+    carctDeSeparation = ''
+    for mots in chaineSource.split(separateur): 
+        mots = remplaceCararcDansMot(mots)
+        if (not (first)):
+            carctDeSeparation = nouveauCaract 
+        if (majuscule):
+            chaineResult = chaineResult + nouveauCaract + mots[:1].upper() + mots[1:]
+            # We use "[:1]" instead of "[0]", 
+            # for no crash in case of an empty string (which happens if the cell is empty)
+        else:
+            chaineResult = chaineResult + nouveauCaract + mots
+    if premierCaractereEnMinuscule :
+        chaineResult = chaineResult[:1].lower() + chaineResult[1:]
+    return chaineResult
 
 
 def create_alias_for_table_cells_Selected():
@@ -61,6 +119,7 @@ def create_alias_for_table_cells_Selected():
                 print('Des cellules en première colonne ou en première ligne ne sont pas conformes')
                 continue
             textAlias =  textLine + '_'  + textColumn
+            textAlias=traitementChaineSource(textAlias, separateur, nouveauCaract, majuscule)
             mySpreadsheet.setAlias(cellName, textAlias)
                 
 
