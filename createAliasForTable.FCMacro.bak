@@ -2,7 +2,7 @@ __Name__   = "Create alias for table"
 __Comment__ =""
 __Author__ = "2cv001"
 __Title__   = "Macro Create Alias For Table"
-__Date__    = "2024/01/22"    #YYYY/MM/DD 10:22 Béta
+__Date__    = "2024/01/22"    #YYYY/MM/DD 11:59 Béta
 __Version__ = __Date__
 
 
@@ -39,7 +39,7 @@ def generate_column_names():
 # parameters for alias creation
 separateur = " "      # typically put " " so blanks will be replaced by nouveauCaract
 nouveauCaract = ''    #Put for example "_" to have the separators replaced by "_". Put "" to have no separator
-majuscule = True      #set to True if you want  "Diametre du cercle" to be "DiametreDuCercle"
+majuscule = False      #set to True if you want  "Diametre du cercle" to be "DiametreDuCercle"
 changeTexteCellule = False  # the text will only be changed if changeCellText is True. 
                           # This does not change anything for the allias itself
 premierCaractereEnMinuscule = False # Force the first character to be in lower case
