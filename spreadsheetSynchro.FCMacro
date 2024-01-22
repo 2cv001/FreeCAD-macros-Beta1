@@ -1,3 +1,25 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# ========================================================================
+# Macro spreadsheetSynchro.FCMacro
+# ========================================================================
+# principe : placer une formule du style @Sketch.Constraints.disty dans des cellule d'un spreadsheet
+# sélectionnez les celulles en question
+# lancez la fonction
+# la macro ira chercher les valeurs dans la contrainte nommée disty du sketch
+# et la placera dans la cellule à gauche de la formule
+# fonctionne aussi pour un autre spreadsheet avec une formule du style @Spreadsheet.aliasDuneCellule
+
+__Name__   = "spreadsheet Synchro"
+__Comment__ =""
+__Author__ = "2cv001"
+__Title__   = "Macro spreadsheetSynchro"
+__Date__    = "2024/01/22"    #YYYY/MM/DD 15:04 Béta
+__Version__ = __Date__
+
+# https://forum.freecad.org/viewtopic.php?t=84527
+
+
 import FreeCAD
 from PySide import QtGui
 
