@@ -119,10 +119,10 @@ def create_alias_for_table_cells_Selected():
             except :
                 #print('Des cellules en première colonne ou en première ligne ne sont pas conformes')
                 continue
-            textAlias =  textLine + '_'  + textColumn
+            textAlias =  str(textLine) + '_'  + str(textColumn)
             textAlias=traitementChaineSource(textAlias, separateur, nouveauCaract, majuscule)
             if addNumberIfOther :
-                for i in range(1, 101):
+                for i in range(1, 1000):
                     try:
                         if i == 1:
                             mySpreadsheet.setAlias(cellName, textAlias)
