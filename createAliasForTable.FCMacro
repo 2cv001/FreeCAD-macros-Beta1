@@ -2,7 +2,7 @@ __Name__   = "Create alias for table"
 __Comment__ =""
 __Author__ = "2cv001"
 __Title__   = "Macro Create Alias For Table"
-__Date__    = "2024/01/22"    #YYYY/MM/DD 12:39 Béta
+__Date__    = "2024/01/22"    #YYYY/MM/DD 13:03 Béta
 __Version__ = __Date__
 
 
@@ -11,7 +11,7 @@ import FreeCAD, FreeCADGui
 from PySide import QtGui
 import re
 
-
+addNumberIfOther=True
 
 def get_column(cell):
     column = ''.join([c for c in cell if not c.isdigit()])
@@ -121,10 +121,18 @@ def create_alias_for_table_cells_Selected():
                 continue
             textAlias =  textLine + '_'  + textColumn
             textAlias=traitementChaineSource(textAlias, separateur, nouveauCaract, majuscule)
-            try :
-                mySpreadsheet.setAlias(cellName, textAlias)
-            except :
-                print('Des cellules en première colonne ou en première ligne sont les mêmes ou non conformes') 
+            if addNumberIfOther :
+                for i in range(1, 101):
+                    try:
+                        if i == 1:
+                            mySpreadsheet.setAlias(cellName, textAlias)
+                        else:
+                            mySpreadsheet.setAlias(cellName, textAlias + '_' + str(i-1))
+                        break  # Arrête la boucle si aucune exception n'est levée
+                    except:
+                        continue  # Passe à l'itération suivante si une exception est levée
+
+                        
                 
 
 
