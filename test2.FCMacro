@@ -24,7 +24,7 @@ __Name__   = "Sketch Constraint From Spreadsheet"
 __Comment__ ="A simple click on a spreadsheet cell, adds a length constraint to a line, circle, points... using a spreadsheet cell alias or address (ex. C2). The macro can create alias for you."
 __Author__ = "2cv001"
 __Title__   = "Macro Sketch Constraint From Spreadsheet"
-__Date__    = "2024/01/23"    #YYYY/MM/DD 07:47 Béta
+__Date__    = "2024/01/24"    #YYYY/MM/DD 23:07 Béta
 __Version__ = __Date__
 __Icon__    = "https://wiki.freecad.org/images/d/dc/Macro_Sketch_Constraint_From_Spreadsheet.svg"
 __Wiki__    = "https://wiki.freecad.org/Macro_sketchConstraintFromSpreadsheet"
@@ -124,7 +124,8 @@ messages = {
         'La contrainte que vous avez sélectionnée est une contrainte de type référence.'+
                     "\n\nVoulez-vous que la cellule contienne la valeur de la contrainte ?"+
                     "\n ATTENTION, vérifiez que vous n'allez pas créer une référence circulaire."+
-                    "\n\nIl se peut que PENDING apparaisse dans la cellule. Pour l'instant, " +
+                    "\n\nIl se peut que PENDING apparaisse dans la cellule. " + 
+                    "En ce cas, tapez Gui.ActiveDocument.ActiveView.getSheet().recompute(True) dans la console python " +
                     "je ne recommande pas son utilisation car FreeCad manage mal les href.",
 
         
@@ -200,7 +201,7 @@ messages = {
         'The constraint you have selected is a reference type constraint.'+
                     "\n\nDo you want the cell to contain the value of the constraint?"+
                     "\n WARNING, check that you are not going to create a circular reference."+
-                    "\n\nPENDING may appear in the cell. The value will appear at the first calculation.",
+                    "\n\nPENDING may appear in the cell. in this case, type Gui.ActiveDocument.ActiveView.getSheet().recompute(True) dans la console python in the python console.",
         
         
         'ClickOnACellBefore':"Click on a cell with a numeric value before runing the macro",
@@ -1640,7 +1641,7 @@ def main():
     #if Gui.ActiveDocument.getInEdit() == Gui.ActiveDocument.Sketch:
     #Gui.ActiveDocument.Sketch.doubleClicked()
 
-
+    mySketch.recompute()
     # is ther constraintes conflicts?
     if sheckBoxConstraintConflicState :
         #if App.activeDocument().isTouched(): # isTouched is not ok in Daily Freecad
