@@ -2,7 +2,7 @@ __Name__   = "Create alias for table"
 __Comment__ =""
 __Author__ = "2cv001"
 __Title__   = "Macro Create Alias For Table"
-__Date__    = "2024/01/22"    #YYYY/MM/DD 13:03 Béta
+__Date__    = "2024/01/31"    #YYYY/MM/DD 20:13 Béta
 __Version__ = __Date__
 # https://forum.freecad.org/viewtopic.php?p=734928#p734928
 
@@ -78,12 +78,13 @@ def traitementChaineSource(chaineSource, separateur, nouveauCaract, majuscule):
         mots = remplaceCararcDansMot(mots)
         if (not (first)):
             carctDeSeparation = nouveauCaract 
-        if (majuscule):
-            chaineResult = chaineResult + nouveauCaract + mots[:1].upper() + mots[1:]
-            # We use "[:1]" instead of "[0]", 
-            # for no crash in case of an empty string (which happens if the cell is empty)
+            if (majuscule):
+                chaineResult = chaineResult + nouveauCaract + mots[:1].upper() + mots[1:]
+                # We use "[:1]" instead of "[0]", 
+                # for no crash in case of an empty string (which happens if the cell is empty)
         else:
             chaineResult = chaineResult + nouveauCaract + mots
+        first=False    
     if premierCaractereEnMinuscule :
         chaineResult = chaineResult[:1].lower() + chaineResult[1:]
     return chaineResult
