@@ -1,0 +1,92 @@
+__Name__   = "tableToObject"
+__Comment__ =""
+__Author__ = "2cv001"
+__Title__   = "Macro Table to object"
+__Date__    = "2024/02/01"    #YYYY/MM/DD 18:55 Béta
+__Version__ = __Date__
+
+from PySide import QtGui
+import FreeCAD as App
+import FreeCADGui as Gui
+
+
+dico={
+        "posx" : "Placement.Base.x",
+        "posy" : "Placement.Base.y",
+        "posz" : "Placement.Base.z",
+        "angle": "Placement.Rotation.Angle",
+        "ang": "Placement.Rotation.Angle",
+        "axisx": "Placement.Rotation.Axis.x",
+        "axisy": "Placement.Rotation.Axis.y",       
+        "axisz": "Placement.Rotation.Axis.z", 
+        "Length" : "Length",
+        "Length2" : "Length2",
+     }   
+
+   
+def set_property_based_on_alias(sheet,cell):
+
+    # alias de la cellule
+    alias = sheet.getAlias(cell)
+    # Vérifier si l'alias est valide
+    if alias is None:
+        print("La cellule sélectionnée n'a pas d'alias.")
+        return
+
+    # Séparer l'alias en nom du corps et nom de la propriété
+    parts = alias.split('_')
+    if len(parts) != 2:
+        print("L'alias doit être sous la forme 'BodyName_PropertyName'.")
+        return
+
+    body_name, property_name = parts
+    try :
+        property_name=dico[property_name]
+    except :
+        print ('propriété ' + property_name + ' non trouvé dans le dico. Voir en haut du code source')
+       
+    doc = App.ActiveDocument
+    body = doc.getObject(body_name)
+
+    if body is None:
+        print(f"Il n'y a pas de corps nommé '{body_name}' dans le document.")
+        return
+
+    # Créer une expression qui fait référence à l'alias de la cellule
+    expression = f"<<{sheet.Name}>>.{alias}"
+
+# Modifier la propriété du corps
+    if hasattr(body, property_name.split('.')[0]): # Placement.Base.x -> Placement
+        body.setExpression(property_name, expression)
+    else:
+        print(f"Le corps '{body_name}' n'a pas de propriété '{property_name}'.")
+
+
+def main() :
+    sheet = Gui.ActiveDocument.ActiveView.getSheet()
+    # Vérifiez si la feuille de calcul est active
+    if sheet.TypeId != 'Spreadsheet::Sheet':
+        print("Veuillez sélectionner des cellules dans une feuille de calcul.")
+        return
+
+    # cellule active
+    #cell = Gui.activeView().currentIndex()
+    
+    aw = Gui.getMainWindow().centralWidget().activeSubWindow() # Store the active window      
+    # To get list of all selected cells
+    sel_items = aw.widget().findChild(QtGui.QTableView).selectedIndexes() 
+    getCellName = lambda r,c:'{}{}{}'.format(chr(c//26 + 64) if c//26 > 0 else '', chr(c%26 + 65), r + 1)
+    for cell in sel_items: # The selected cells are scanned
+        cellName=getCellName(cell.row(), cell.column())
+
+        if str(sheet.getContents(cellName))!= '' :
+            set_property_based_on_alias(sheet, cellName)
+
+
+if __name__ == '__main__':
+    main()
+
+
+
+
+
