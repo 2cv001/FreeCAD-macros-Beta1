@@ -2,74 +2,139 @@ __Name__   = "tableToObject"
 __Comment__ =""
 __Author__ = "2cv001"
 __Title__   = "Macro Table to object"
-__Date__    = "2024/02/01"    #YYYY/MM/DD 18:55 Béta
+__Date__    = "2024/02/05"    #YYYY/MM/DD 17:38 Béta
 __Version__ = __Date__
+
+#===========================================================================================
+# Il existe une macro 'Create alias for table'  qui crée automatiquement des alias 
+# dans un tableau à deux dimensions en utilisant le nom de la ligne 
+# et le nom de la colonne.
+# On peut alors lancer la macro 'Table to object' ..qui remplit automatiquement
+# les propriétés des objets (body, sketch, ...) en fonction des 
+# alias créés par 'Create alias for table' et qui indique l'objet et la propriété
+# 
+#==========================================================================================
 
 from PySide import QtGui
 import FreeCAD as App
 import FreeCADGui as Gui
 
 
+
 dico={
         "posx" : "Placement.Base.x",
         "posy" : "Placement.Base.y",
         "posz" : "Placement.Base.z",
+        "posX" : "Placement.Base.x",
+        "posY" : "Placement.Base.y",
+        "posZ" : "Placement.Base.z",
         "angle": "Placement.Rotation.Angle",
         "ang": "Placement.Rotation.Angle",
         "axisx": "Placement.Rotation.Axis.x",
         "axisy": "Placement.Rotation.Axis.y",       
         "axisz": "Placement.Rotation.Axis.z", 
+        "axeX": "Placement.Rotation.Axis.x",
+        "axeY": "Placement.Rotation.Axis.y",       
+        "axeZ": "Placement.Rotation.Axis.z", 
         "Length" : "Length",
         "Length2" : "Length2",
+        "Radius" : "Radius",
+        "Height" : "Height",
+        "FirstAngle" : "FirstAngle",
+        "SecondAngle" : "SecondAngle",
+        "Angle1" : "Angle1",
+        "Angle2" : "Angle2",
+        "Angle3" : "Angle3",
      }   
 
-   
+def recomputeAll() :                
+    for obj in FreeCAD.ActiveDocument.Objects:
+        obj.touch()
+    FreeCAD.ActiveDocument.recompute()
+
+  
+def set_constraint_expression(sketchLabel, constraint_name, expression):
+    # Get all Sketches with this label
+    sketches = App.ActiveDocument.getObjectsByLabel(sketchLabel)
+    if len(sketches)>1 :
+        print("Warning, multiple sketches have the same label. " 
+            + " All these sketches will be processed. " 
+            + "This may cause problems if different sketches with the same label "
+            + "have constraints with the same name.")
+    # Go through all Sketches
+    for sketch in sketches:
+        # Go through all constraints in the Sketch
+        for i in range(sketch.ConstraintCount):
+            # Get the constraint
+            constraint = sketch.Constraints[i]
+            
+            # Check if the constraint name matches the one we're looking for
+            if constraint.Name == constraint_name:
+                # Modify the constraint value
+                sketch.setExpression('Constraints[' +  str(i)+ ']', expression)
+                break
+
+  
 def set_property_based_on_alias(sheet,cell):
 
-    # alias de la cellule
+    # alias of the cell
     alias = sheet.getAlias(cell)
-    # Vérifier si l'alias est valide
-    if alias is None:
-        print("La cellule sélectionnée n'a pas d'alias.")
-        return
+    # Check if the alias is valid
+    if sheet.getContents(cell)!='' :
+        if alias is None:
+            print("The selected cell " + cell +  " does not have an alias.")
+            return
 
-    # Séparer l'alias en nom du corps et nom de la propriété
-    parts = alias.split('_')
+    # Separate the alias into body name and property name
+    # ex 'body_Name_posX' -> body_Name for the object and posX for property name
+    parts = alias.rsplit('_', 1)
     if len(parts) != 2:
-        print("L'alias doit être sous la forme 'BodyName_PropertyName'.")
+        print("The alias must be in the form 'BodyName_PropertyName'.")
         return
 
-    body_name, property_name = parts
+    objLabel, property_name = parts
+    try :
+        obj=App.ActiveDocument.getObjectsByLabel(objLabel)[0]
+    except :
+        print('no object with this label : ',objLabel)
+        return
     try :
         property_name=dico[property_name]
     except :
-        print ('propriété ' + property_name + ' non trouvé dans le dico. Voir en haut du code source')
+        try :
+            if  obj.TypeId != 'Sketcher::SketchObject' :
+                print ('property ' + property_name + ' not found in the dictionary. See at the top of the source code')
+        except :
+            pass
        
-    doc = App.ActiveDocument
-    body = doc.getObject(body_name)
 
-    if body is None:
-        print(f"Il n'y a pas de corps nommé '{body_name}' dans le document.")
+    if obj is None:
+        print(f"There is no object named '{objLabel}' in the document.")
         return
 
-    # Créer une expression qui fait référence à l'alias de la cellule
-    expression = f"<<{sheet.Name}>>.{alias}"
+    # Create an expression that refers to the cell's alias
+    expression = f"<<{sheet.Label}>>.{alias}"
 
-# Modifier la propriété du corps
-    if hasattr(body, property_name.split('.')[0]): # Placement.Base.x -> Placement
-        body.setExpression(property_name, expression)
+    # Modify the object's property
+    # if it's a constraint
+    if  obj.TypeId == 'Sketcher::SketchObject' :
+        set_constraint_expression(objLabel, property_name, expression)
+        return
+        
+    if hasattr(obj, property_name.split('.')[0]): # Placement.Base.x -> Placement
+        obj.setExpression(property_name, expression)
     else:
-        print(f"Le corps '{body_name}' n'a pas de propriété '{property_name}'.")
+        print(f"The body '{objLabel}' does not have a property '{property_name}'.")
 
 
-def main() :
+def tableToObject() :
     sheet = Gui.ActiveDocument.ActiveView.getSheet()
-    # Vérifiez si la feuille de calcul est active
+    # Check if the spreadsheet is active
     if sheet.TypeId != 'Spreadsheet::Sheet':
-        print("Veuillez sélectionner des cellules dans une feuille de calcul.")
+        print("Please select cells in a spreadsheet.")
         return
 
-    # cellule active
+    # active cell
     #cell = Gui.activeView().currentIndex()
     
     aw = Gui.getMainWindow().centralWidget().activeSubWindow() # Store the active window      
@@ -81,8 +146,11 @@ def main() :
 
         if str(sheet.getContents(cellName))!= '' :
             set_property_based_on_alias(sheet, cellName)
+            
+        
 
-
+def main():
+    tableToObject()
 if __name__ == '__main__':
     main()
 

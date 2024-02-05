@@ -2,9 +2,18 @@ __Name__   = "Create alias for table"
 __Comment__ =""
 __Author__ = "2cv001"
 __Title__   = "Macro Create Alias For Table"
-__Date__    = "2024/01/31"    #YYYY/MM/DD 20:13 Béta
+__Date__    = "2024/02/05"    #YYYY/MM/DD 20:13 Béta
 __Version__ = __Date__
 # https://forum.freecad.org/viewtopic.php?p=734928#p734928
+#===========================================================================================
+# 'Create alias for table'   crée automatiquement des alias 
+# dans un tableau à deux dimensions en utilisant le nom de la ligne 
+# et le nom de la colonne.
+# On peut alors lancer la macro 'Table to object' ..qui remplit automatiquement
+# les propriétés des objets (body, sketch, ...) en fonction des 
+# alias créés par 'Create alias for table' et qui indique l'objet et la propriété
+# 
+#==========================================================================================
 
 
 
