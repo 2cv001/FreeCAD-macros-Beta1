@@ -11,24 +11,22 @@ __Name__   = "Alias for table for object"
 __Comment__ ="Utilisation d'un tableau pour parémétrer des objets"
 __Author__ = "2cv001"
 __Title__   = "Alias For Table For Object"
-__Date__    = "2024/02/06"    #YYYY/MM/DD 20:13 Béta
+__Date__    = "2024/02/06"    #YYYY/MM/DD 14;21 Béta
 __Version__ = __Date__
 # https://forum.freecad.org/viewtopic.php?t=84878
 #===========================================================================================
-# La macro  crée automatiquement des alias 
-# dans un tableau à deux dimensions en utilisant le nom de la ligne 
-# et le nom de la colonne. Pour pouvoir utiliser la fonction "Table to object"
-# mettre le nom de l'objet concerné en colonne et le nom de la propriété en ligne.
-# la fonction de création d'allias créera des alias (au dico près, voir plus bas)
-# avec un syntaxte de "LabelObject_property"
+# The macro automatically creates alias in a two-dimensional table using the name of the row
+# and the name of the column. To be able to use the "Table to object" function
+# put the name of the concerned object in the column and the name of the property in the row.
+# the alias creation function will create alias (except dico, see below)
+# with this syntax  "LabelObject_property"
 #
-# La macro peut aussi remplir automatiquement
-# les propriétés des objets (body, sketch, ...) en fonction des 
-# alias créés par 'Create alias for table' et qui indique l'objet et la propriété
+# The macro can also automatically fill the properties of objects (body, sketch, ...) based on
+# aliases created by 'Create alias for table' and which indicate the object and the property
 #
-# le dico (voir plus loin dans le code) sert à convertir ce que vous placez en ligne du haut pour faire correspondre
-# à ce qu'il faut mettre en expression. Par exemple si vous avez "posx" dans la 
-# première ligne de votre sélection, dans l'expression, pour la partie propriété, il y aura
+# The dico (see further in the code) is used to convert what you put in the top line to match
+# what needs to be put in the expression. For example, if you have "posx" in the
+# first line of your selection, in the expression, for the property part, there will be
 # "Placement.Base.x"
 #==========================================================================================
 
@@ -188,9 +186,9 @@ def create_alias_for_table_cells_Selected():
 
 
 
-# le dico sert à convertir ce que vous placez en ligne du haut pour faire correspondre
-# à ce qu'il faut mettre en expression. Par exemple si vous avez "posx" dans la 
-# première ligne de votre sélection, dans l'expression, pour la partie propriété, il y aura
+# The dictionary is used to convert what you put in the top line to match
+# what needs to be put in the expression. For example, if you have “posx” in the
+# first line of your selection, in the expression, for the property part, there will be
 # "Placement.Base.x" 
 dico={
         "posx" : "Placement.Base.x",
