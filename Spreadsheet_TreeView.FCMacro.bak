@@ -1,0 +1,28 @@
+
+print('--------------------------')
+print('Gui.activeView().currentIndex()',Gui.activeView().currentIndex()) #mais on doit être dans le spreadsheet je crois
+#Spreadsheet_TreeView.FCMacro
+
+# Sens TreeView->Spreadsheet
+# place dans la cellule sélecionnée du spreadsheet 
+# la formule qui désigne a propriété sélecionnée dans le treeView
+# en option avec le truc qui va bien pour éviter les références circulaires
+#
+# Sens SpreadSheet-> TreeView 
+# Place dasn la propriété sélecionnée du treeview l'expression qui fait référence
+# à la celule sélecionnée du spreadsheet. 
+# Avec son alias si elle en a un sinon avec "C3"
+
+
+# Sens SpreadSheet-> TreeView 
+# Place dasn la propriété sélecionnée du treeview l'expression qui fait référence
+# à la celule sélecionnée du spreadsheet. 
+# Avec son alias si elle en a un sinon avec "C3"
+#
+# Récupérer la cellule Cel qui est sélecfionnée
+# Récupérer le nom de la propriété qui est sélecionnée cis parents
+# Calculer l'expression à placerr dans la propriété
+# Mettre l'expression dans la propriété
+
+
+# Cellule sélectionnée : 
