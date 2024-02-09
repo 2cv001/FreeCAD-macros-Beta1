@@ -1,28 +1,108 @@
+try:
+    from PySide import QtWidgets
+    from PySide import QtGui
+except:
+    from PySide2 import QtWidgets
+    from PySide2 import QtGui
+import re
 
-print('--------------------------')
-print('Gui.activeView().currentIndex()',Gui.activeView().currentIndex()) #mais on doit être dans le spreadsheet je crois
-#Spreadsheet_TreeView.FCMacro
-
-# Sens TreeView->Spreadsheet
-# place dans la cellule sélecionnée du spreadsheet 
-# la formule qui désigne a propriété sélecionnée dans le treeView
-# en option avec le truc qui va bien pour éviter les références circulaires
-#
-# Sens SpreadSheet-> TreeView 
-# Place dasn la propriété sélecionnée du treeview l'expression qui fait référence
-# à la celule sélecionnée du spreadsheet. 
-# Avec son alias si elle en a un sinon avec "C3"
+mw = Gui.getMainWindow()
+trees = mw.findChildren(QtWidgets.QTreeView)
 
 
-# Sens SpreadSheet-> TreeView 
-# Place dasn la propriété sélecionnée du treeview l'expression qui fait référence
-# à la celule sélecionnée du spreadsheet. 
-# Avec son alias si elle en a un sinon avec "C3"
-#
-# Récupérer la cellule Cel qui est sélecfionnée
-# Récupérer le nom de la propriété qui est sélecionnée cis parents
-# Calculer l'expression à placerr dans la propriété
-# Mettre l'expression dans la propriété
+modelview = mw.findChild(QtGui.QDockWidget, "Model")
+if not modelview:
+    tab = mw.findChild(QtGui.QTabWidget, "combiTab")
+    fixedTree = tab.widget(0).findChildren(QtGui.QTreeWidget)[0]
+else:
+    fixedTree = modelview.findChildren(QtGui.QTreeWidget)[0]
 
 
-# Cellule sélectionnée : 
+
+     
+        
+def has_parent(index):
+    return index.parent().isValid()
+
+def extract_value_expression(string):
+    string = str(string)
+    result = re.match(r"(\d+[.,]\d+)\s*(mm|°)\s*\((.*)\)", string)    
+    if result is None:
+        return string, ''
+
+    value = result.group(1).strip()  # Supprimer les espaces blancs
+    expression = result.group(3).strip() if result.group(3) else ''  # Supprimer les espaces blancs
+    return value, expression
+
+def selectedPropertiesInTreeView():
+#------------------------------------------------
+# get selected properties in treeView 
+# select only one object and one or more property
+#------------------------------------------------
+
+
+    props=[]
+    for tree in trees:
+        prop=[]
+        n= 0
+        for index in tree.selectedIndexes():
+            n=n+1
+            itemData = index.model().itemData(index)
+            print('itemData',itemData)
+            if itemData!={} :
+                if 0 in itemData  :
+                    if n==1 :   
+                        tabProperty=[itemData[0]]
+                        parent = index.parent()
+                        tabProperty.append(parent.data())
+                        while has_parent(parent):
+                            parent=parent.parent()
+                            tabProperty.append(parent.data())
+   
+                        prop.append(tabProperty) 
+
+                    elif n==2 :
+                        prop.append(itemData[0])  # value                       
+                        
+                    if 3 in itemData and n==2 : # tip
+                        prop.append(itemData[3])
+                    else : 
+                        prop.append('')
+            if n ==2 :
+                props.append(prop)
+                prop=[]
+                n=0
+    return props
+
+
+props=selectedPropertiesInTreeView()
+objectName=props[len(props)-1][0]
+i=0
+print('len(props)',len(props))
+# for i in [0,len(props)-2] :
+for i in range(len(props) - 1):
+    print ('__________________________________')
+    print ('selected property number ',str(i+1))
+    print ('__________________________________')
+    if len(props[i])< 3:
+        print('Something is wrong to get selected properties. '+
+            'Perhaps 2 or more objects were selected.')
+        continue  
+    print('objectName',objectName)
+    propertyName = props[i][0]
+    print('property =',propertyName)
+    print('propertyName =',propertyName[0])
+    print('parentName =',propertyName[1])
+  
+    val=props[i][2]
+    print('val',val)
+    value,expression=extract_value_expression(val)    
+    print('value =',str(value))
+    print('expression =',expression)
+    tip= props[i][3]
+    print('tip =',tip)
+
+
+
+
+
