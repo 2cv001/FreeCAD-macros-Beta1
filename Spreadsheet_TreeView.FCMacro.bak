@@ -1,44 +1,68 @@
-try:
-    from PySide import QtWidgets
-    from PySide import QtGui
-except:
-    from PySide2 import QtWidgets
-    from PySide2 import QtGui
-import re
-
-mw = Gui.getMainWindow()
-trees = mw.findChildren(QtWidgets.QTreeView)
-
-
-modelview = mw.findChild(QtGui.QDockWidget, "Model")
-if not modelview:
-    tab = mw.findChild(QtGui.QTabWidget, "combiTab")
-    fixedTree = tab.widget(0).findChildren(QtGui.QTreeWidget)[0]
-else:
-    fixedTree = modelview.findChildren(QtGui.QTreeWidget)[0]
 
 
 
-     
-        
-def has_parent(index):
-    return index.parent().isValid()
 
-def extract_value_expression(string):
-    string = str(string)
-    result = re.match(r"(\d+[.,]\d+)\s*(mm|°)\s*\((.*)\)", string)    
-    if result is None:
-        return string, ''
 
-    value = result.group(1).strip()  # Supprimer les espaces blancs
-    expression = result.group(3).strip() if result.group(3) else ''  # Supprimer les espaces blancs
-    return value, expression
+#Spreadsheet_TreeView.FCMacro
 
+# Sens TreeView->Spreadsheet
+# place dans la cellule sélecionnée du spreadsheet 
+# la formule qui désigne a propriété sélecionnée dans le treeView
+# en option avec le truc qui va bien pour éviter les références circulaires
+#
+# Sens SpreadSheet-> TreeView 
+# Place dans la propriété sélecionnée du treeview l'expression qui fait référence
+# à la celule sélecionnée du spreadsheet. 
+# Avec son alias si elle en a un sinon avec "C3"
+
+
+# Sens SpreadSheet-> TreeView 
+# Place dans la propriété sélecionnée du treeview l'expression qui fait référence
+# à la celule sélecionnée du spreadsheet. 
+# Avec son alias si elle en a un sinon avec "C3"
+#
+# Récupérer la cellule Cel qui est sélectionnée
+# Récupérer le nom de la propriété qui est sélecionnée cis parents
+# Calculer l'expression à placer dans la propriété
+# Mettre l'expression dans la propriété
+
+# Récupérer le spreadsheet actif
+mySpreadSheet=Gui.ActiveDocument.ActiveView.getSheet()
+mySpreadsheetLable=mySpreadSheet.Label
+print('label,label)
+
+
+# Récupérer la cellule Cel qui est sélectionnée
+
+cel=Gui.activeView().currentIndex()
+print('cel',cel) 
+
+
+
+# Récupérer le nom de la propriété et le nom de l'objetqui est sélecionnée cis parents
 def selectedPropertiesInTreeView():
 #------------------------------------------------
 # get selected properties in treeView 
 # select only one object and one or more property
+# return object Nae, array with first property name and its parents
+# props to be able to get athers properties selectedd 
 #------------------------------------------------
+
+    def has_parent(index):
+        return index.parent().isValid()
+
+    def extract_value_expression(string):
+        if  string.count('(') == 0 or chaine.count(')'):
+            return string,''
+            
+        string = str(string)
+        parts = string.split('(')
+        expression = parts[-1]
+        value = string.rpartition('(')[0].strip()
+        s = string.rpartition('(')[2]
+        expression=s.replace(')', '').strip()
+        return value, expression      
+
 
 
     props=[]
@@ -48,7 +72,6 @@ def selectedPropertiesInTreeView():
         for index in tree.selectedIndexes():
             n=n+1
             itemData = index.model().itemData(index)
-            print('itemData',itemData)
             if itemData!={} :
                 if 0 in itemData  :
                     if n==1 :   
@@ -72,37 +95,64 @@ def selectedPropertiesInTreeView():
                 props.append(prop)
                 prop=[]
                 n=0
-    return props
+    objectName=props[len(props)-1][0]
+    # le premier élement de props[0][0] est propertyName, le reste sont les parents
+    propertyName= props[0][0][0] 
+    t=props[0][0].copy()
+    t.pop(0) # on retire le premier élément  qui est donc propertyName
+    propertyParents=t
+
+    
+    propertiesName=[]
+    propertiesParents=[]
+    propertiesTip=[]
+    propertiesValue=[]
+    propertiesExpression=[]
+    for i in range(len(props) - 1):
+        if len(props[i])< 3:
+            print('Something is wrong to get selected properties. '+
+                'Perhaps 2 or more objects were selected.')
+            continue  
+
+        propertyName = props[i][0][0]
+        t=props[i][0].copy()
+        t.pop(0) # on retire le premier élément  qui est donc propertyName
+        propertyParents=t
+        propertyTip=props[i][3]
+        val=props[i][2]
+        value,expression=extract_value_expression(val)   
+        propertiesName.append(propertyName) 
+        propertiesParents.append(propertyParents)
+        propertiesTip.append(propertyTip)
+        propertiesValue.append(value)
+        propertiesExpression.append(expression)      
+      
+    return objectName,propertiesName,propertiesParents,propertiesTip, propertiesValue,propertiesExpression,props
 
 
-props=selectedPropertiesInTreeView()
-objectName=props[len(props)-1][0]
-i=0
-print('len(props)',len(props))
-# for i in [0,len(props)-2] :
-for i in range(len(props) - 1):
-    print ('__________________________________')
-    print ('selected property number ',str(i+1))
-    print ('__________________________________')
-    if len(props[i])< 3:
-        print('Something is wrong to get selected properties. '+
-            'Perhaps 2 or more objects were selected.')
-        continue  
-    print('objectName',objectName)
-    propertyName = props[i][0]
-    print('property =',propertyName)
-    print('propertyName =',propertyName[0])
-    print('parentName =',propertyName[1])
-  
-    val=props[i][2]
-    print('val',val)
-    value,expression=extract_value_expression(val)    
-    print('value =',str(value))
-    print('expression =',expression)
-    tip= props[i][3]
-    print('tip =',tip)
+(objectName,propertiesName,propertiesParents,propertiesTip,propertiesValue,
+ propertiesExpression,props) = selectedPropertiesInTreeView()
+print('objectName,propertiesName,propertiesParents,propertiesTip,propertiesValue,propertiesExpression',objectName,propertiesName,propertiesParents,propertiesTip,propertiesValue,propertiesExpression,props )
+# pour voir les propriétés disponibles
+obj = FreeCAD.ActiveDocument.getObject(objectName) 
+obj.PropertiesList
+print('objectName',objectName)
+print('PropertiesList',PropertiesList)
 
 
 
+# Calculer l'expression à placer dans la propriété
+################################################"
+<<datas>>.A2
+ou <<datas>>.aliasDeA2
 
+ #Mettre l'expression dans la propriété
+ ##########################################
+ obj=objectName
+ setattr(obj, 'angle', nouvelle_valeur) 
+ 
+ #ou plutôt une expression
 
+obj = FreeCAD.ActiveDocument.getObject('Body') 
+expression = '10+5'
+obj.setExpression('Label', expression)
