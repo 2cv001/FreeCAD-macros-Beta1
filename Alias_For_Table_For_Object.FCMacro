@@ -10,7 +10,7 @@ __Name__   = "Alias for table for object"
 __Comment__ ="Utilisation d'un tableau pour parémétrer des objets"
 __Author__ = "2cv001"
 __Title__   = "Alias For Table For Object"
-__Date__    = "2024/02/06"    #YYYY/MM/DD 14;21 Béta
+__Date__    = "2024/02/20"    #YYYY/MM/DD 14;21 Béta
 __Version__ = __Date__
 # https://forum.freecad.org/viewtopic.php?t=84878
 #===========================================================================================
@@ -204,6 +204,13 @@ dico={
         "axeX": "Placement.Rotation.Axis.x",
         "axeY": "Placement.Rotation.Axis.y",       
         "axeZ": "Placement.Rotation.Axis.z", 
+        "attachementX" : "AttachmentOffset.Base.x",
+        "attachementY" : "AttachmentOffset.Base.y",
+        "attachementZ" : "AttachmentOffset.Base.z",
+        "attachementAngle" : "AttachmentOffset.Rotation.Angle",
+        "attachementAxisX" : "AttachmentOffset.Rotation.Axis.x",
+        "attachementAxisY" : "AttachmentOffset.Rotation.Axis.y",        
+        "attachementAxisZ" : "AttachmentOffset.Rotation.Axis.z",
         "Length" : "Length",
         "Length2" : "Length2",
         "Radius" : "Radius",
@@ -218,6 +225,7 @@ dico={
   
 def set_constraint_expression(sketchLabel, constraint_name, expression):
     # Get all Sketches with this label
+    findConstraint = False
     sketches = App.ActiveDocument.getObjectsByLabel(sketchLabel)
     if len(sketches)>1 :
         print("Warning, multiple sketches have the same label. " 
@@ -225,17 +233,22 @@ def set_constraint_expression(sketchLabel, constraint_name, expression):
             + "This may cause problems if different sketches with the same label "
             + "have constraints with the same name.")
     # Go through all Sketches
+
     for sketch in sketches:
+
         # Go through all constraints in the Sketch
         for i in range(sketch.ConstraintCount):
             # Get the constraint
             constraint = sketch.Constraints[i]
             
             # Check if the constraint name matches the one we're looking for
+            print('constraint.Name',constraint.Name)
             if constraint.Name == constraint_name:
                 # Modify the constraint value
                 sketch.setExpression('Constraints[' +  str(i)+ ']', expression)
+                findConstraint=True
                 break
+    return findConstraint
 
   
 def set_property_based_on_alias(sheet,cell):
@@ -269,6 +282,7 @@ def set_property_based_on_alias(sheet,cell):
                 print ('property ' + property_name + ' not found in the dictionary. See at the top of the source code')
         except :
             pass
+
        
 
     if obj is None:
@@ -281,13 +295,17 @@ def set_property_based_on_alias(sheet,cell):
     # Modify the object's property
     # if it's a constraint
     if  obj.TypeId == 'Sketcher::SketchObject' :
-        set_constraint_expression(objLabel, property_name, expression)
-        return
+        print('expression 288',expression)
+        findConstraint=set_constraint_expression(objLabel, property_name, expression)
+        if findConstraint : # if not we continue to find a property
+            return
         
     if hasattr(obj, property_name.split('.')[0]): # Placement.Base.x -> Placement
         obj.setExpression(property_name, expression)
+        print('property_name',property_name)
+        print('expression',expression)
     else:
-        print(f"The body '{objLabel}' does not have a property '{property_name}'.")
+        print(f"The object '{objLabel}' does not have a property '{property_name}'.")
 
 
 def tableToObject() :
