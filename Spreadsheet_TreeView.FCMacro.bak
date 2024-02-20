@@ -1,6 +1,20 @@
+__Name__   = "Spreadsheet TreeView"
+__Comment__ =""
+__Author__ = "2cv001"
+__Title__   = "Spreadsheet TreeView"
+__Date__    = "2024/01/27"    #YYYY/MM/DD 
+__Version__ = __Date__
+__Icon__    = ""
+__Wiki__    = ""
 
 
-
+try:
+    from PySide import QtWidgets
+    from PySide import QtGui
+except:
+    from PySide2 import QtWidgets
+    from PySide2 import QtGui
+import re
 
 
 #Spreadsheet_TreeView.FCMacro
@@ -29,30 +43,43 @@
 # Récupérer le spreadsheet actif
 mySpreadSheet=Gui.ActiveDocument.ActiveView.getSheet()
 mySpreadsheetLable=mySpreadSheet.Label
-print('label,label)
+
 
 
 # Récupérer la cellule Cel qui est sélectionnée
 
 cel=Gui.activeView().currentIndex()
-print('cel',cel) 
 
 
 
-# Récupérer le nom de la propriété et le nom de l'objetqui est sélecionnée cis parents
+# Récupérer le nom de la propriété et le nom de l'objet qui est sélectionné cis parents
 def selectedPropertiesInTreeView():
 #------------------------------------------------
 # get selected properties in treeView 
 # select only one object and one or more property
 # return object Nae, array with first property name and its parents
 # props to be able to get athers properties selectedd 
-#------------------------------------------------
+#
+# return : 
+#
+# objectLabel :list : Label of the object  
+# and its parents Ex for a sketch :['Sketch', 'Pad', 'Body', 'Unnamed']
+# propertiesName : list of selected properties
+# propertiesParents list (because one or more selected properties)
+#   of list (parents of the properties)
+# propertiesTip : list (for each selected properties) of the tips
+# propertiesValue : list of values, for each selected properties
+# propertiesExpression,
+# props
 
+#------------------------------------------------
+    mw = Gui.getMainWindow()
+    trees = mw.findChildren(QtWidgets.QTreeView)
     def has_parent(index):
         return index.parent().isValid()
 
     def extract_value_expression(string):
-        if  string.count('(') == 0 or chaine.count(')'):
+        if  str(string).count('(') == 0 or str(string).count(')') == 0 :
             return string,''
             
         string = str(string)
@@ -62,8 +89,6 @@ def selectedPropertiesInTreeView():
         s = string.rpartition('(')[2]
         expression=s.replace(')', '').strip()
         return value, expression      
-
-
 
     props=[]
     for tree in trees:
@@ -95,7 +120,10 @@ def selectedPropertiesInTreeView():
                 props.append(prop)
                 prop=[]
                 n=0
-    objectName=props[len(props)-1][0]
+    objectLabel=props[len(props)-1][0]
+    print('objectLabel[0] 122',objectLabel[0])
+    obj=App.ActiveDocument.getObjectsByLabel(objectLabel[0])[0]
+
     # le premier élement de props[0][0] est propertyName, le reste sont les parents
     propertyName= props[0][0][0] 
     t=props[0][0].copy()
@@ -127,32 +155,120 @@ def selectedPropertiesInTreeView():
         propertiesValue.append(value)
         propertiesExpression.append(expression)      
       
-    return objectName,propertiesName,propertiesParents,propertiesTip, propertiesValue,propertiesExpression,props
+    return objectLabel,propertiesName,propertiesParents,propertiesTip, propertiesValue,propertiesExpression,props
+
+def listToString(lst) :
+    string=''
+    for el in lst :
+        string=string + ',' + el
+    return string.replace(' ','')[1:]
 
 
-(objectName,propertiesName,propertiesParents,propertiesTip,propertiesValue,
+
+
+def findPropertyNameComplete(objectLabel, propertiesName, propertiesParents):
+# The dictionary is used to convert what you put in the top line to match
+# what needs to be put in the expression. For example, if you have “posx” in the
+# first line of your selection, in the expression, for the property part, there will be
+# "Placement.Base.x" 
+
+    dico={
+        "Base,Placement,Position" : "Placement.Base",       
+       
+        "Base,Placement": "Placement.Rotation",
+
+        "Base,Placement,Axe": "Placement.Rotation.Axis",
+       
+        "Base,Placement,Axis": "Placement.Rotation.Axis",
+
+        "Base":"",
+        "Attachment,AttachmentOffset,Axis" : "AttachmentOffset.Rotation.Axis",
+
+        "Attachment,AttachmentOffset,Axe" : "AttachmentOffset.Rotation.Axis",
+
+        "Attachment,AttachmentOffset,Position" : "AttachmentOffset.Base",
+
+        "Attachment,AttachmentOffset" : "AttachmentOffset.Rotation",
+        "Attachment" : "",
+        
+        "Pad" : "Pad",
+        "Revolution" : "", 
+        "Revolution,Base" : "Revolution.Base",  
+        "Revolution,Axis" : "Revolution.Axis",
+        "SketchBased" : "",
+        
+        "Length" : "Length",
+        "Length2" : "Length2",
+        "Radius" : "Radius",
+        "Height" : "Height",
+        "FirstAngle" : "FirstAngle",
+        "SecondAngle" : "SecondAngle",
+        "Angle1" : "Angle1",
+        "Angle2" : "Angle2",
+        "Angle3" : "Angle3",
+     } 
+    # inversion du sens 
+    pp=[]
+    for p in propertiesParents[::-1]:
+        pp.append(p)
+    propertiesParents=pp    
+    
+    propertiesParents
+    propertyNameComplete=''
+    print('-------------------------------------------------------')
+    print('objectLabel',objectLabel)
+    print('propertiesName 200',propertiesName)
+    print('propertiesParents201',propertiesParents)
+    print('_________________')
+
+    s=listToString(propertiesParents)
+    if dico[s] == '' :
+         propertyNameComplete = propertiesName
+    else :     
+        propertyNameComplete=dico[s] + '.' + propertiesName
+    
+    if propertyNameComplete in ['AttachmentOffset.Angle'] :
+        propertyNameComplete = 'AttachmentOffset.Rotation.Angle'        
+
+    propertyNameComplete=propertyNameComplete.replace(' ', '')
+    
+    print('propertyNameComplete 211',propertyNameComplete)
+    print('-------------------------------------------------------')
+    
+    return propertyNameComplete
+
+(objectLabel,propertiesName,propertiesParents,propertiesTip,propertiesValue,
  propertiesExpression,props) = selectedPropertiesInTreeView()
-print('objectName,propertiesName,propertiesParents,propertiesTip,propertiesValue,propertiesExpression',objectName,propertiesName,propertiesParents,propertiesTip,propertiesValue,propertiesExpression,props )
-# pour voir les propriétés disponibles
-obj = FreeCAD.ActiveDocument.getObject(objectName) 
-obj.PropertiesList
-print('objectName',objectName)
-print('PropertiesList',PropertiesList)
+ 
+print('______________',selectedPropertiesInTreeView()) 
+print('objectLabel[0]',objectLabel[0])
+obj = FreeCAD.ActiveDocument.getObjectsByLabel(objectLabel[0])[0]
 
 
+
+propertyNameComplete=findPropertyNameComplete(objectLabel[0], 
+            propertiesName[0], propertiesParents[0])
+   
+print('findPropertyNameComplete(objectLabel[0], propertiesName[0], propertiesParents[0])'
+    ,findPropertyNameComplete(objectLabel[0], propertiesName[0], propertiesParents[0]))
 
 # Calculer l'expression à placer dans la propriété
 ################################################"
-<<datas>>.A2
-ou <<datas>>.aliasDeA2
+#<<datas>>.A2
+#ou <<datas>>.aliasDeA2
 
  #Mettre l'expression dans la propriété
  ##########################################
- obj=objectName
- setattr(obj, 'angle', nouvelle_valeur) 
+
+#setattr(objectLabel, 'angle', 30) 
  
  #ou plutôt une expression
+alias=mySpreadSheet.getAlias(cel)
 
-obj = FreeCAD.ActiveDocument.getObject('Body') 
-expression = '10+5'
-obj.setExpression('Label', expression)
+if alias is not None :
+    expression= mySpreadsheetLable + "." + alias
+else :
+    expression= mySpreadsheetLable + "." + cel
+    
+print('propertyNameComplete 255',propertyNameComplete)
+obj.setExpression(propertyNameComplete, expression)
