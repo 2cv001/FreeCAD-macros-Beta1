@@ -12,6 +12,7 @@ __Author__ = "2cv001"
 __Title__   = "Alias For Table For Object"
 __Date__    = "2024/02/20"    #YYYY/MM/DD 14;21 Béta
 __Version__ = __Date__
+# https://wiki.freecad.org/Macro_Alias_For_Table_For_Object
 # https://forum.freecad.org/viewtopic.php?t=84878
 #===========================================================================================
 # The macro automatically creates alias in a two-dimensional table using the name of the row
@@ -43,13 +44,13 @@ class CheckBoxDialog(QtGui.QDialog):
 
         self.setWindowTitle("Macro FreeCAD")
 
-        self.createAliasForTableCheckBox = QtGui.QCheckBox("Création des alias")
-        self.createAliasForTableCheckBox.setToolTip("Création d'alias dans chaque cellule sélectionnée" +
-                "\nen fonction de la première ligne et de la première colonne sélectionnées" +
-                "\nLes alias seront au format 'LabelObject_property'")
-        self.tableToObjectCheckBox = QtGui.QCheckBox("propriétés dans les objets en fonction des alias " )
-        self.tableToObjectCheckBox.setToolTip("remplie automatiquement les propriétés des objets (body, sketch, ...)" +
-                "\nen fonction des alias qui doivent être au format 'LabelObject_property'")
+        self.createAliasForTableCheckBox = QtGui.QCheckBox("Alias creation")
+        self.createAliasForTableCheckBox.setToolTip("Creates an alias in each selected cell" +
+                "\nbased on the first selected row and column" +
+                "\nThe aliases will be in the format 'LabelObject_property'")
+        self.tableToObjectCheckBox = QtGui.QCheckBox("Properties in objects based on aliases")
+        self.tableToObjectCheckBox.setToolTip("Automatically fills the properties of objects (body, sketch, ...)" +
+                "\nbased on aliases which must be in the format 'LabelObject_property'")
         buttonBox = QtGui.QDialogButtonBox(QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Cancel)
         buttonBox.accepted.connect(self.accept)
         buttonBox.rejected.connect(self.reject)
@@ -62,6 +63,7 @@ class CheckBoxDialog(QtGui.QDialog):
 
     def accept(self):
         super(CheckBoxDialog, self).accept()
+
 
 
 
@@ -242,7 +244,6 @@ def set_constraint_expression(sketchLabel, constraint_name, expression):
             constraint = sketch.Constraints[i]
             
             # Check if the constraint name matches the one we're looking for
-            print('constraint.Name',constraint.Name)
             if constraint.Name == constraint_name:
                 # Modify the constraint value
                 sketch.setExpression('Constraints[' +  str(i)+ ']', expression)
@@ -295,15 +296,12 @@ def set_property_based_on_alias(sheet,cell):
     # Modify the object's property
     # if it's a constraint
     if  obj.TypeId == 'Sketcher::SketchObject' :
-        print('expression 288',expression)
         findConstraint=set_constraint_expression(objLabel, property_name, expression)
         if findConstraint : # if not we continue to find a property
             return
         
     if hasattr(obj, property_name.split('.')[0]): # Placement.Base.x -> Placement
         obj.setExpression(property_name, expression)
-        print('property_name',property_name)
-        print('expression',expression)
     else:
         print(f"The object '{objLabel}' does not have a property '{property_name}'.")
 
