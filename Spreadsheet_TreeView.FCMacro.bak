@@ -19,37 +19,12 @@ import re
 
 #Spreadsheet_TreeView.FCMacro
 
-# Sens TreeView->Spreadsheet
-# place dans la cellule sélecionnée du spreadsheet 
-# la formule qui désigne a propriété sélecionnée dans le treeView
-# en option avec le truc qui va bien pour éviter les références circulaires
-#
-# Sens SpreadSheet-> TreeView 
-# Place dans la propriété sélecionnée du treeview l'expression qui fait référence
-# à la celule sélecionnée du spreadsheet. 
-# Avec son alias si elle en a un sinon avec "C3"
 
-
-# Sens SpreadSheet-> TreeView 
-# Place dans la propriété sélecionnée du treeview l'expression qui fait référence
-# à la celule sélecionnée du spreadsheet. 
-# Avec son alias si elle en a un sinon avec "C3"
-#
-# Récupérer la cellule Cel qui est sélectionnée
-# Récupérer le nom de la propriété qui est sélecionnée cis parents
-# Calculer l'expression à placer dans la propriété
-# Mettre l'expression dans la propriété
-
-# Récupérer le spreadsheet actif
 mySpreadSheet=Gui.ActiveDocument.ActiveView.getSheet()
 mySpreadsheetLable=mySpreadSheet.Label
 
-
-
 # Récupérer la cellule Cel qui est sélectionnée
-
 cel=Gui.activeView().currentIndex()
-
 
 
 # Récupérer le nom de la propriété et le nom de l'objet qui est sélectionné cis parents

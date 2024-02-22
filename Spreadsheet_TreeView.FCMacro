@@ -6,7 +6,7 @@ __Date__    = "2024/01/27"    #YYYY/MM/DD
 __Version__ = __Date__
 __Icon__    = ""
 __Wiki__    = ""
-
+__License__ = "Apache-2.0"
 
 try:
     from PySide import QtWidgets

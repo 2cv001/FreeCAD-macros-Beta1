@@ -12,7 +12,8 @@ __Author__ = "2cv001"
 __Title__   = "Alias For Table For Object"
 __Date__    = "2024/02/20"    #YYYY/MM/DD 14;21 Béta
 __Version__ = __Date__
-# https://wiki.freecad.org/Macro_Alias_For_Table_For_Object
+__License__ = "Apache-2.0"
+__Wiki__ = "https://wiki.freecad.org/Macro_Alias_For_Table_For_Object"
 # https://forum.freecad.org/viewtopic.php?t=84878
 #===========================================================================================
 # The macro automatically creates alias in a two-dimensional table using the name of the row
