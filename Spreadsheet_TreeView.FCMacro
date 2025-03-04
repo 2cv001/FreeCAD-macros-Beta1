@@ -24,7 +24,7 @@ __Name__ = "Sketch Constraint From Spreadsheet"
 __Comment__ = "A simple click on a spreadsheet cell, adds a length constraint to a line, circle, points... using a spreadsheet cell alias or address (ex. C2). The macro can create alias for you."
 __Author__ = "2cv001"
 __Title__ = "Macro Sketch Constraint From Spreadsheet"
-__Date__ = "2025/04/03 19:00"  # YYYY/MM/DD
+__Date__ = "2025/03/04 20:00"  # YYYY/MM/DD
 __Version__ = __Date__
 __Icon__ = (
     "https://wiki.freecad.org/images/d/dc/Macro_Sketch_Constraint_From_Spreadsheet.svg"
@@ -1245,7 +1245,13 @@ class getConstraintType(QtGui.QDialog):
     def initUI(self):
         # ToolTip="If checked, alias will automatically be created during each macro execution. Alias will be built for the right cell from the text in this cell."
         ToolTip = messages[language]["getConstraintTypeAliasToolTip"]
-
+        self.setObjectName("getConstraintTypeWindow")
+        option_buttons_width = 325
+        self.setStyleSheet(
+            "QWidget[objectName='getConstraintTypeWindow'] QPushButton {min-width: "
+            + str(option_buttons_width)
+            + "px;}"
+        )
         self.setWindowIcon(QtGui.QIcon("dialog_icon.png"))
         gridLayout = QtGui.QGridLayout()
         option1Button = QtGui.QPushButton(
@@ -1284,6 +1290,10 @@ class getConstraintType(QtGui.QDialog):
             messages[language]["getConstraintTypeOption3ButtonSetTextToolTip"]
         )
 
+        option1Button.setMinimumWidth(option_buttons_width)
+        option2Button.setMinimumWidth(option_buttons_width)
+        option3Button.setMinimumWidth(option_buttons_width)
+
         option1Button.clicked.connect(self.onOption1)
         option2Button.clicked.connect(self.onOption2)
         option3Button.clicked.connect(self.onOption3)
@@ -1291,7 +1301,7 @@ class getConstraintType(QtGui.QDialog):
         option4Button = QtGui.QPushButton(
             QtGui.QIcon(":/icons/application-exit.svg"), messages[language]["Cancel"]
         )
-
+        option4Button.setMinimumWidth(option_buttons_width)
         option4Button.clicked.connect(self.onOption4)
         global config
         global ini_file
