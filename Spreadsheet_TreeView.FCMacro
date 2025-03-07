@@ -104,6 +104,7 @@ messages = {
         "DialogTextboxSketchNameTolLip": "Nom pour les sketch",
         "TITLE": "TITRE",
         "Textsforalias": "Libellé des alias",
+        "andAlias": " et alias",
         "Values": "Valeurs",
         "OkOui": "&Oui",
         "NoPasDe": "Pas de",
@@ -162,6 +163,7 @@ messages = {
         "DialogTextboxSketchNameTolLip": "Name for the sketch",
         "TITLE": "TITLE",
         "Textsforalias": "Texts for alias",
+        "andAlias": " and alias",
         "Values": "Values",
         "OkOui": "&OK",
         "NoPasDe": "No",
@@ -1245,15 +1247,12 @@ class getConstraintType(QtGui.QDialog):
     def initUI(self):
         # ToolTip="If checked, alias will automatically be created during each macro execution. Alias will be built for the right cell from the text in this cell."
         ToolTip = messages[language]["getConstraintTypeAliasToolTip"]
-        self.setObjectName("getConstraintTypeWindow")
-        option_buttons_width = 325
-        self.setStyleSheet(
-            "QWidget[objectName='getConstraintTypeWindow'] QPushButton {min-width: "
-            + str(option_buttons_width)
-            + "px;}"
-        )
+
+        # main layout
+        layout = QtGui.QVBoxLayout(self)
+
         self.setWindowIcon(QtGui.QIcon("dialog_icon.png"))
-        gridLayout = QtGui.QGridLayout()
+
         option1Button = QtGui.QPushButton(
             QtGui.QIcon(":/icons/constraints/Constraint_HorizontalDistance.svg"), ""
         )
@@ -1290,10 +1289,6 @@ class getConstraintType(QtGui.QDialog):
             messages[language]["getConstraintTypeOption3ButtonSetTextToolTip"]
         )
 
-        option1Button.setMinimumWidth(option_buttons_width)
-        option2Button.setMinimumWidth(option_buttons_width)
-        option3Button.setMinimumWidth(option_buttons_width)
-
         option1Button.clicked.connect(self.onOption1)
         option2Button.clicked.connect(self.onOption2)
         option3Button.clicked.connect(self.onOption3)
@@ -1301,8 +1296,19 @@ class getConstraintType(QtGui.QDialog):
         option4Button = QtGui.QPushButton(
             QtGui.QIcon(":/icons/application-exit.svg"), messages[language]["Cancel"]
         )
-        option4Button.setMinimumWidth(option_buttons_width)
+
         option4Button.clicked.connect(self.onOption4)
+        constraintsLayoutBox = QtGui.QGroupBox(
+            messages[language]["getConstraintTypeWindowTitle"]
+        )
+        constraintsLayout = QtGui.QGridLayout()
+        constraintsLayout.addWidget(option1Button, 0, 0)
+        constraintsLayout.addWidget(option2Button, 0, 1)
+        constraintsLayout.addWidget(option3Button, 1, 0)
+        constraintsLayout.addWidget(option4Button, 1, 1)
+        constraintsLayoutBox.setLayout(constraintsLayout)
+        layout.addWidget(constraintsLayoutBox)
+
         global config
         global ini_file
         self.textboxAlias = QtGui.QLineEdit(self.getIniCellForAlias(config, ini_file))
@@ -1311,14 +1317,6 @@ class getConstraintType(QtGui.QDialog):
         self.textboxAlias.setMaxLength(4)  # Limit the text box to 4 characters
         self.textboxAlias.setToolTip(ToolTip)
 
-        gridLayout.addWidget(option1Button, 0, 0)
-        gridLayout.addWidget(option2Button, 0, 1)
-        gridLayout.addWidget(option3Button, 1, 0)
-        gridLayout.addWidget(option4Button, 1, 1)
-
-        gridLayout.addWidget(self.textboxAlias, 4, 1)
-
-        self.setLayout(gridLayout)
         self.setGeometry(250, 250, 0, 50)
         # self.setWindowTitle("Choose a constraint type")
         self.setWindowTitle(messages[language]["getConstraintTypeWindowTitle"])
@@ -1349,7 +1347,6 @@ class getConstraintType(QtGui.QDialog):
         )
 
         self.checkboxConflic.setChecked(True)
-        gridLayout.addWidget(self.checkboxConflic, 2, 0, 1, 2)
         self.checkboxConflic.clicked.connect(self.onOptionCheckBox)
 
         # self.checkboxAlias = QtGui.QCheckBox("Automatic alias labels for this cell, and under :")
@@ -1366,12 +1363,17 @@ class getConstraintType(QtGui.QDialog):
 
         # self.checkboxAlias.setChecked(True)
         self.checkboxAlias.setChecked(getIniCheckboxStateForAlias(config, ini_file))
-        gridLayout.addWidget(self.checkboxAlias, 4, 0)
 
-        horizontal_line = QtGui.QFrame()
-        horizontal_line.setFrameShape(QtGui.QFrame.HLine)
-        horizontal_line.setFrameShadow(QtGui.QFrame.Sunken)
-        gridLayout.addWidget(horizontal_line, 3, 0, 1, 2)
+        restOfLayoutGroupBox = QtGui.QGroupBox(
+            messages[language]["getConstraintTypeCheckboxConflic"]
+            + messages[language]["andAlias"]
+        )
+        restOfLayout = QtGui.QGridLayout()
+        restOfLayout.addWidget(self.checkboxConflic, 0, 0)
+        restOfLayout.addWidget(self.checkboxAlias, 1, 0)
+        restOfLayout.addWidget(self.textboxAlias, 1, 1)
+        restOfLayoutGroupBox.setLayout(restOfLayout)
+        layout.addWidget(restOfLayoutGroupBox)
 
         # macroDirectory = App.ParamGet("User parameter:BaseApp/Preferences/Macro").GetString("MacroPath") + "\\"
 
