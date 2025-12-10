@@ -1,0 +1,543 @@
+# -*- coding: utf-8 -*-
+"""
+Macro FreeCAD : export 3MF avec contrôle de tessellation (LinearDeflection / AngularDeflection),
+remplacement de la géométrie dans un 3MF existant, options UI et sauvegarde dans macro_config.ini.
+"""
+import math
+import os
+import sys
+import zipfile
+import shutil
+import subprocess
+import re
+import fnmatch
+import xml.etree.ElementTree as ET
+import configparser
+import platform
+import shlex
+
+import FreeCAD
+import FreeCADGui
+import Mesh
+import MeshPart
+from PySide import QtGui
+
+# -------------------------
+# Constantes et configuration
+# -------------------------
+INI_FILE = os.path.join(os.path.dirname(__file__), "macro_config.ini")
+
+# Position par défaut au centre du plateau
+CENTER_X = 120
+CENTER_Y = 120
+CENTER_Z = 2.5   # valeur par défaut Qidi
+
+# Emplacement par défaut de l'exécutable du slicer selon le système
+if platform.system() == "Windows":
+    DEFAULT_SLICER_EXE = r"C:\Program Files\QIDIStudio\qidi-studio.exe"
+elif platform.system() == "Linux":
+    DEFAULT_SLICER_EXE = "/usr/bin/qidi-studio"
+else:
+    DEFAULT_SLICER_EXE = ""
+
+# Valeurs par défaut pour la tessellation (demandées)
+DEFAULT_LINEAR_DEFLECTION = 0.01        # meilleure qualité par défaut
+DEFAULT_ANGULAR_DEGREES = 3.0           # affichage en degrés pour l'UI
+DEFAULT_ANGULAR_DEFLECTION = DEFAULT_ANGULAR_DEGREES * math.pi / 180.0  # radians pour MeshPart
+
+# -------------------------
+# Utilitaires UI / config
+# -------------------------
+def show_message(title, message):
+    QtGui.QMessageBox.information(None, title, message)
+
+def load_config():
+    """
+    Retourne un dict avec les valeurs lues dans l'INI (section Settings).
+    Clés attendues : slicer_exe, linear_deflection, angular_deflection, launch_postactions
+    """
+    cfg = {
+        "slicer_exe": DEFAULT_SLICER_EXE,
+        "linear_deflection": DEFAULT_LINEAR_DEFLECTION,
+        "angular_deflection": DEFAULT_ANGULAR_DEFLECTION,
+        "launch_postactions": "yes"
+    }
+    config = configparser.ConfigParser()
+    if os.path.exists(INI_FILE):
+        try:
+            config.read(INI_FILE)
+            if "Settings" in config:
+                s = config["Settings"]
+                if "slicer_exe" in s:
+                    cfg["slicer_exe"] = s.get("slicer_exe", cfg["slicer_exe"])
+                if "linear_deflection" in s:
+                    try:
+                        cfg["linear_deflection"] = float(s.get("linear_deflection", cfg["linear_deflection"]))
+                    except Exception:
+                        pass
+                if "angular_deflection" in s:
+                    try:
+                        cfg["angular_deflection"] = float(s.get("angular_deflection", cfg["angular_deflection"]))
+                    except Exception:
+                        pass
+                if "launch_postactions" in s:
+                    cfg["launch_postactions"] = s.get("launch_postactions", cfg["launch_postactions"])
+        except Exception:
+            pass
+    return cfg
+
+def save_slicer_path(path):
+    config = configparser.ConfigParser()
+    if os.path.exists(INI_FILE):
+        try:
+            config.read(INI_FILE)
+        except Exception:
+            config = configparser.ConfigParser()
+    if "Settings" not in config:
+        config["Settings"] = {}
+    config["Settings"]["slicer_exe"] = path
+    # conserver autres valeurs si présentes
+    try:
+        with open(INI_FILE, "r", encoding="utf-8") as f:
+            existing = configparser.ConfigParser()
+            existing.read_file(f)
+            if "Settings" in existing and "linear_deflection" in existing["Settings"]:
+                config["Settings"]["linear_deflection"] = existing["Settings"]["linear_deflection"]
+            if "Settings" in existing and "angular_deflection" in existing["Settings"]:
+                config["Settings"]["angular_deflection"] = existing["Settings"]["angular_deflection"]
+            if "Settings" in existing and "launch_postactions" in existing["Settings"]:
+                config["Settings"]["launch_postactions"] = existing["Settings"]["launch_postactions"]
+    except Exception:
+        pass
+    with open(INI_FILE, "w", encoding="utf-8") as f:
+        config.write(f)
+
+def save_deflection_values(linear, angular):
+    config = configparser.ConfigParser()
+    if os.path.exists(INI_FILE):
+        try:
+            config.read(INI_FILE)
+        except Exception:
+            config = configparser.ConfigParser()
+    if "Settings" not in config:
+        config["Settings"] = {}
+    config["Settings"]["linear_deflection"] = str(linear)
+    config["Settings"]["angular_deflection"] = str(angular)
+    # conserver slicer_exe et launch_postactions si présents
+    try:
+        with open(INI_FILE, "r", encoding="utf-8") as f:
+            existing = configparser.ConfigParser()
+            existing.read_file(f)
+            if "Settings" in existing and "slicer_exe" in existing["Settings"]:
+                config["Settings"]["slicer_exe"] = existing["Settings"]["slicer_exe"]
+            if "Settings" in existing and "launch_postactions" in existing["Settings"]:
+                config["Settings"]["launch_postactions"] = existing["Settings"]["launch_postactions"]
+    except Exception:
+        pass
+    with open(INI_FILE, "w", encoding="utf-8") as f:
+        config.write(f)
+
+def ask_user_options(current_slicer, current_linear, current_angular, current_launch_postactions):
+    """
+    Retourne : (keep_params: bool, keep_positions: bool, slicer_path: str or "", launch_slicer: bool,
+                 linear_deflection: float, angular_deflection: float, run_postactions: bool)
+    Si l'utilisateur annule : retourne (None, None, None, None, None, None, None)
+    """
+    dialog = QtGui.QDialog()
+    dialog.setWindowTitle("Options d'export vers QidiStudio")
+    dialog.setMinimumWidth(700)
+
+    layout = QtGui.QVBoxLayout()
+
+    chk_params = QtGui.QCheckBox("Conserver les paramètres d'impression (profil du slicer)")
+    chk_params.setChecked(True)
+    layout.addWidget(chk_params)
+
+    chk_positions = QtGui.QCheckBox("Conserver les positions sur le plateau")
+    chk_positions.setChecked(True)
+    layout.addWidget(chk_positions)
+
+    # Case pour lancer ou non le slicer
+    chk_launch = QtGui.QCheckBox("Lancer le slicer après export")
+    chk_launch.setChecked(True)
+    layout.addWidget(chk_launch)
+
+    # Champ pour changer le slicer
+    h = QtGui.QHBoxLayout()
+    h.addWidget(QtGui.QLabel("Chemin du slicer"))
+    edit_slicer = QtGui.QLineEdit(current_slicer)
+    edit_slicer.setMinimumWidth(420)
+    btn_browse = QtGui.QPushButton("Parcourir…")
+    def browse():
+        path, _ = QtGui.QFileDialog.getOpenFileName(dialog, "Choisir l'exécutable du slicer")
+        if path:
+            edit_slicer.setText(path)
+    btn_browse.clicked.connect(browse)
+    h.addWidget(edit_slicer, stretch=1)
+    h.addWidget(btn_browse)
+    layout.addLayout(h)
+
+    # Déviation linéaire (LinearDeflection)
+    hlin = QtGui.QHBoxLayout()
+    label_lin = QtGui.QLabel("Précision (LinearDeflection) entre 0.01 et 10. Haute qualité : 0.01")
+    spin_lin = QtGui.QDoubleSpinBox()
+    spin_lin.setRange(0.01, 10.0)          # borne inférieure 0.01 comme demandé
+    spin_lin.setSingleStep(0.01)
+    spin_lin.setDecimals(2)                # affichage avec 2 décimales
+    try:
+        # afficher la valeur actuelle arrondie à 2 décimales pour la lisibilité
+        spin_lin.setValue(round(float(current_linear), 2))
+    except Exception:
+        spin_lin.setValue(DEFAULT_LINEAR_DEFLECTION)
+    hlin.addWidget(label_lin)
+    hlin.addWidget(spin_lin)
+    layout.addLayout(hlin)
+
+    # Déviation angulaire (AngularDeflection) en degrés affichés mais stockés en radians
+    hanga = QtGui.QHBoxLayout()
+    label_ang = QtGui.QLabel("Tolérance angulaire (AngularDeflection) en degrés (ex: 3)")
+    spin_ang = QtGui.QDoubleSpinBox()
+    spin_ang.setRange(1.0, 90.0)
+    spin_ang.setSingleStep(1.0)
+    spin_ang.setDecimals(1)
+    try:
+        # convertir radians -> degrés pour affichage
+        deg = float(current_angular) * 180.0 / math.pi
+        spin_ang.setValue(deg)
+    except Exception:
+        spin_ang.setValue(DEFAULT_ANGULAR_DEGREES)
+    hanga.addWidget(label_ang)
+    hanga.addWidget(spin_ang)
+    layout.addLayout(hanga)
+
+    # Option exécuter actions post-export
+    chk_post = QtGui.QCheckBox("Exécuter actions post-export (définies dans macro_config.ini)")
+    chk_post.setChecked(True if str(current_launch_postactions).lower() in ("1","yes","true","on") else False)
+    layout.addWidget(chk_post)
+
+    btns = QtGui.QDialogButtonBox(QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Cancel)
+    layout.addWidget(btns)
+    dialog.setLayout(layout)
+
+    btns.accepted.connect(dialog.accept)
+    btns.rejected.connect(dialog.reject)
+
+    if dialog.exec() == QtGui.QDialog.Accepted:
+        linear_val = float(spin_lin.value())
+        angular_deg = float(spin_ang.value())
+        angular_rad = angular_deg * math.pi / 180.0
+        return (chk_params.isChecked(),
+                chk_positions.isChecked(),
+                edit_slicer.text(),
+                chk_launch.isChecked(),
+                linear_val,
+                angular_rad,
+                chk_post.isChecked())
+    else:
+        return (None, None, None, None, None, None, None)
+
+# -------------------------
+# Fonctions de traitement 3MF / mesh
+# -------------------------
+def find_geom_file_in_3mf(zip_path):
+    with zipfile.ZipFile(zip_path, 'r') as z:
+        rels_name = "_rels/.rels"
+        if rels_name in z.namelist():
+            try:
+                rels_bytes = z.read(rels_name)
+                rels_text = rels_bytes.decode("utf-8")
+                root = ET.fromstring(rels_text)
+                for rel in root:
+                    if rel.tag.endswith("Relationship"):
+                        rtype = rel.attrib.get("Type", "")
+                        if rtype == "http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel":
+                            target = rel.attrib.get("Target")
+                            if target and target.startswith("/"):
+                                target = target[1:]
+                            if target in z.namelist():
+                                return target
+            except Exception:
+                pass
+        for name in z.namelist():
+            if fnmatch.fnmatch(name, "3D/Objects/*.model"):
+                return name
+        if "3D/3dmodel.model" in z.namelist():
+            return "3D/3dmodel.model"
+    return None
+
+def reset_item_transform(model_data, center=(CENTER_X, CENTER_Y, CENTER_Z)):
+    text = model_data.decode("utf-8")
+    new_transform = f'transform="1 0 0 0 1 0 0 0 1 {center[0]} {center[1]} {center[2]}"'
+    text = re.sub(r'(<item[^>]*?)\s+transform="[^"]+"', r'\1 ' + new_transform, text)
+    return text.encode("utf-8")
+
+def run_post_actions(config_path=INI_FILE):
+    """
+    Lit la section [PostActions] du fichier INI et lance chaque action listée.
+    Format INI attendu :
+      [PostActions]
+      action1 = python:/path/to/script.py --arg
+      action2 = /path/to/exe --arg
+    Exécutions non bloquantes (Popen). Affiche un message en cas d'erreur pour chaque action.
+    """
+    config = configparser.ConfigParser()
+    if not os.path.exists(config_path):
+        return
+    try:
+        config.read(config_path)
+    except Exception as e:
+        QtGui.QMessageBox.warning(None, "INI illisible", f"Impossible de lire {config_path} : {e}")
+        return
+    if "PostActions" not in config:
+        return
+    items = sorted(config.items("PostActions"), key=lambda kv: kv[0])
+    for key, cmdline in items:
+        cmdline = cmdline.strip()
+        if not cmdline:
+            continue
+        try:
+            if cmdline.lower().startswith("python:"):
+                payload = cmdline[len("python:"):].strip()
+                posix = platform.system() != "Windows"
+                try:
+                    args = [sys.executable] + shlex.split(payload, posix=posix)
+                except Exception:
+                    args = [sys.executable, payload]
+                subprocess.Popen(args)
+            else:
+                posix = platform.system() != "Windows"
+                try:
+                    args = shlex.split(cmdline, posix=posix)
+                    subprocess.Popen(args)
+                except Exception:
+                    # fallback shell
+                    if platform.system() == "Windows":
+                        subprocess.Popen(cmdline, shell=True)
+                    else:
+                        subprocess.Popen(cmdline, shell=True, executable="/bin/sh")
+        except Exception as e:
+            QtGui.QMessageBox.warning(None, "Erreur action post-export",
+                                      f"Échec de l'action {key} :\n{cmdline}\n\nErreur : {e}")
+            continue
+
+def export_selection_with_deflection(selection, out_3mf_path, linear_deflection=DEFAULT_LINEAR_DEFLECTION, angular_deflection=DEFAULT_ANGULAR_DEFLECTION):
+    """
+    Génère des Mesh::Feature temporaires pour chaque objet sélectionné en utilisant
+    LinearDeflection et AngularDeflection, exporte ces meshes en 3MF,
+    puis supprime les objets temporaires.
+    """
+    doc = FreeCAD.ActiveDocument
+    temp_objs = []
+    try:
+        for obj in selection:
+            # Générer le mesh à partir de la forme avec la déviation demandée
+            mesh = MeshPart.meshFromShape(Shape=obj.Shape,
+                                         LinearDeflection=float(linear_deflection),
+                                         AngularDeflection=float(angular_deflection))
+            # Créer un objet Mesh::Feature temporaire pour l'export
+            mobj = doc.addObject("Mesh::Feature", f"TempMesh_{obj.Name}")
+            mobj.Mesh = mesh
+            temp_objs.append(mobj)
+
+        # Forcer recompute si nécessaire
+        doc.recompute()
+
+        # Exporter les objets mesh temporaires en 3MF
+        Mesh.export(temp_objs, out_3mf_path)
+
+    finally:
+        # Nettoyage : supprimer les objets temporaires
+        for t in temp_objs:
+            try:
+                doc.removeObject(t.Name)
+            except Exception:
+                pass
+        doc.recompute()
+
+# -------------------------
+# Routine principale
+# -------------------------
+def export_replace_geometry():
+    cfg = load_config()
+    doc = FreeCAD.ActiveDocument
+    if not doc:
+        show_message("Erreur", "❌ Aucun document ouvert dans FreeCAD.")
+        return
+
+    fcstd_path = doc.FileName
+    if not fcstd_path:
+        show_message("Erreur", "❌ Le projet n'a pas encore été sauvegardé.")
+        return
+
+    base_name = os.path.splitext(fcstd_path)[0]
+    fc_3mf = base_name + ".3mf"
+    old_3mf = base_name + ".old.3mf"
+
+    if os.path.exists(fc_3mf):
+        try:
+            shutil.move(fc_3mf, old_3mf)
+        except Exception:
+            pass
+
+    selection = FreeCADGui.Selection.getSelection()
+    if not selection:
+        show_message("Avertissement", "⚠️ Aucun objet sélectionné.")
+        return
+    if len(selection) > 1:
+        show_message("Avertissement", "⚠️ Sélection multiple non supportée.")
+        return
+
+    # Récupérer valeurs depuis l'UI
+    slicer_path_pref = cfg.get("slicer_exe", DEFAULT_SLICER_EXE)
+    linear_pref = cfg.get("linear_deflection", DEFAULT_LINEAR_DEFLECTION)
+    angular_pref = cfg.get("angular_deflection", DEFAULT_ANGULAR_DEFLECTION)
+    launch_post_pref = cfg.get("launch_postactions", "yes")
+
+    keep_params, keep_positions, slicer_path, launch_slicer, linear_value, angular_value, run_post = ask_user_options(
+        slicer_path_pref, linear_pref, angular_pref, launch_post_pref)
+
+    # Si Annuler
+    if slicer_path is None and launch_slicer is None:
+        show_message("Info", "⚠️ Export annulé par l’utilisateur.")
+        # restaurer l'ancien .3mf si on l'avait déplacé
+        if os.path.exists(old_3mf) and not os.path.exists(fc_3mf):
+            try:
+                shutil.move(old_3mf, fc_3mf)
+            except Exception:
+                pass
+        return
+
+    # Sauvegarder les valeurs dans l'INI
+    try:
+        save_deflection_values(linear_value, angular_value)
+    except Exception:
+        pass
+
+    # Exporter le maillage en 3mf en générant des meshes temporaires par objet
+    try:
+        export_selection_with_deflection(selection, fc_3mf, linear_deflection=linear_value, angular_deflection=angular_value)
+    except Exception as e:
+        show_message("Erreur", f"❌ Erreur lors de l'export 3MF : {e}")
+        # restaurer ancien si possible
+        if os.path.exists(old_3mf) and not os.path.exists(fc_3mf):
+            try:
+                shutil.move(old_3mf, fc_3mf)
+            except Exception:
+                pass
+        return
+
+    print("Exportation FreeCAD terminée :", fc_3mf)
+
+    if os.path.exists(old_3mf):
+        geom_entry = find_geom_file_in_3mf(fc_3mf)
+        if not geom_entry:
+            show_message("Erreur", "❌ Aucun fichier de géométrie détecté dans le 3MF exporté.")
+            return
+        with zipfile.ZipFile(fc_3mf, 'r') as fc_zip:
+            geom_data = fc_zip.read(geom_entry)
+
+        tmp_new = base_name + ".new.3mf"
+
+        # Si le slicer par défaut n'existe pas, on laisse le champ vide et on prévient (mais on n'empêche pas l'export)
+        if not slicer_path or not os.path.exists(slicer_path):
+            if launch_slicer:
+                show_message("Erreur", "❌ Aucun slicer valide fourni, la macro s'arrête.")
+                if os.path.exists(old_3mf) and not os.path.exists(fc_3mf):
+                    try:
+                        shutil.move(old_3mf, fc_3mf)
+                    except Exception:
+                        pass
+                return
+            else:
+                if not slicer_path:
+                    show_message("Avertissement", "⚠️ Aucun slicer renseigné ; le slicer ne sera pas lancé.")
+                else:
+                    show_message("Avertissement", "⚠️ Le chemin du slicer fourni est introuvable ; le slicer ne sera pas lancé.")
+
+        # Écriture atomique : créer tmp_new puis remplacer
+        try:
+            with zipfile.ZipFile(old_3mf, 'r') as old_zip, zipfile.ZipFile(tmp_new, 'w') as new_zip:
+                for item in old_zip.infolist():
+                    data = old_zip.read(item.filename)
+                    if item.filename.startswith("3D/Objects/") and item.filename.endswith(".model"):
+                        new_zip.writestr(item.filename, geom_data)
+                    elif item.filename.endswith("3dmodel.model"):
+                        if not keep_positions:
+                            data = reset_item_transform(data, center=(CENTER_X, CENTER_Y, CENTER_Z))
+                        new_zip.writestr(item.filename, data)
+                    elif not keep_params and item.filename.startswith("Metadata/"):
+                        continue
+                    else:
+                        new_zip.writestr(item, data)
+        except Exception as e:
+            show_message("Erreur", f"❌ Erreur lors de la création du 3MF final : {e}")
+            return
+
+        # Remplacement atomique du fichier .3mf
+        try:
+            if os.path.exists(fc_3mf):
+                os.remove(fc_3mf)
+        except Exception:
+            pass
+        try:
+            shutil.move(tmp_new, fc_3mf)
+        except Exception as e:
+            show_message("Erreur", f"❌ Impossible de remplacer le 3MF : {e}")
+            return
+        try:
+            if os.path.exists(old_3mf):
+                os.remove(old_3mf)
+        except Exception:
+            pass
+
+        print("✅ Géométrie FreeCAD injectée et options appliquées :", fc_3mf)
+
+        # Si l'utilisateur a demandé de lancer le slicer et que le chemin est valide, on le lance
+        if launch_slicer and slicer_path and os.path.exists(slicer_path):
+            try:
+                subprocess.Popen([slicer_path, fc_3mf])
+            except Exception as e:
+                show_message("Erreur", f"❌ Erreur lors du lancement du slicer : {e}")
+        else:
+            if not launch_slicer:
+                show_message("Info", "✅ Export terminé. Le slicer n'a pas été lancé (option décochée).")
+
+        # Sauvegarder le chemin du slicer si valide
+        if slicer_path and os.path.exists(slicer_path):
+            try:
+                save_slicer_path(slicer_path)
+            except Exception:
+                pass
+
+        # Sauvegarder l'option run_post dans l'INI
+        try:
+            config = configparser.ConfigParser()
+            if os.path.exists(INI_FILE):
+                config.read(INI_FILE)
+            if "Settings" not in config:
+                config["Settings"] = {}
+            config["Settings"]["launch_postactions"] = "yes" if run_post else "no"
+            # conserver slicer_exe et deflections si présents
+            if "Settings" in config and "slicer_exe" not in config["Settings"] and slicer_path:
+                config["Settings"]["slicer_exe"] = slicer_path
+            if "Settings" in config and "linear_deflection" not in config["Settings"]:
+                config["Settings"]["linear_deflection"] = str(linear_value)
+            if "Settings" in config and "angular_deflection" not in config["Settings"]:
+                config["Settings"]["angular_deflection"] = str(angular_value)
+            with open(INI_FILE, "w", encoding="utf-8") as f:
+                config.write(f)
+        except Exception:
+            pass
+
+        # Lancer les actions listées dans l'INI si l'option est cochée
+        if run_post:
+            run_post_actions()
+    else:
+        # Pas d'ancien 3mf : export simple
+        print("✅ Fichier généré uniquement par FreeCAD :", fc_3mf)
+        if run_post:
+            run_post_actions()
+
+# Lancement automatique de la macro
+if __name__ == "__main__":
+    export_replace_geometry()
