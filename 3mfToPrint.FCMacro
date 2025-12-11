@@ -41,6 +41,7 @@ TRANSLATIONS = {
         "dlg_title": "Options d'export vers QidiStudio",
         "chk_params": "Conserver les paramètres d'impression (profil du slicer)",
         "chk_positions": "Conserver les positions sur le plateau",
+        "chk_stl": "Générer également un STL ?",
         "chk_launch": "Lancer le slicer",
         "browse": "Parcourir…",
         "linear_label": "Précision (LinearDeflection) entre 0.01 et 10. Haute qualité : 0.01",
@@ -57,6 +58,7 @@ TRANSLATIONS = {
         "dlg_title": "Export options to QidiStudio",
         "chk_params": "Keep print parameters (slicer profile)",
         "chk_positions": "Keep positions on the build plate",
+        "chk_stl": "Also generate an STL?",
         "chk_launch": "Launch slicer",
         "browse": "Browse…",
         "linear_label": "Precision (LinearDeflection) between 0.01 and 10. High quality: 0.01",
@@ -128,7 +130,7 @@ def load_config():
         except Exception as e:
             print("⚠️ Erreur lecture ini:", e)
     return cfg
-
+    
 def load_extra_commands_from_ini(path=INI_FILE):
     cfg = configparser.ConfigParser()
     try:
@@ -195,6 +197,7 @@ def save_settings(linear=None, angular_rad=None, slicer_path=None):
     print("✅ Mise à jour ini :", INI_FILE,
           "linear=", linear, "angular_deg=", angular_deg, "slicer_exe=", slicer_path)
 
+
 def ask_user_options(current_slicer, current_linear, current_angular):
     dialog = QtGui.QDialog()
     dialog.setWindowTitle(tr["dlg_title"])
@@ -210,6 +213,11 @@ def ask_user_options(current_slicer, current_linear, current_angular):
     chk_positions = QtGui.QCheckBox(tr["chk_positions"])
     chk_positions.setChecked(True)
     layout.addWidget(chk_positions)
+
+    # Nouvelle case : générer STL
+    chk_stl = QtGui.QCheckBox(tr["chk_stl"])
+    chk_stl.setChecked(False)
+    layout.addWidget(chk_stl)
 
     # Ligne combinée : case "Lancer le slicer" + champ chemin
     h_slicer = QtGui.QHBoxLayout()
@@ -295,6 +303,7 @@ def ask_user_options(current_slicer, current_linear, current_angular):
         return (
             chk_params.isChecked(),
             chk_positions.isChecked(),
+            chk_stl.isChecked(),
             edit_slicer.text(),
             chk_launch.isChecked(),
             linear_val,
@@ -302,10 +311,78 @@ def ask_user_options(current_slicer, current_linear, current_angular):
             [(chk.isChecked(), cmd, delay) for chk, cmd, delay in extra_checks]
         )
     else:
-        return (None, None, None, None, None, None, [])
+        return (None, None, None, None, None, None, None, [])
 
-    
-    
+def find_geom_file_in_3mf(three_mf_path):
+    """Retourne le nom du fichier de géométrie principal dans un 3MF.
+    Cherche dans le zip un fichier sous '3D/Objects/' ou '3D/3dmodel.model'."""
+    try:
+        with zipfile.ZipFile(three_mf_path, 'r') as zf:
+            for name in zf.namelist():
+                # Fichiers de géométrie typiques
+                if name.startswith("3D/Objects/") and name.endswith(".model"):
+                    return name
+                if name.endswith("3dmodel.model"):
+                    return name
+    except Exception as e:
+        print("⚠️ Erreur lecture 3MF:", e)
+    return None
+
+
+
+
+def recenter_vertices(model_data, center=(CENTER_X, CENTER_Y, CENTER_Z)):
+    """Recentre les sommets d'un fichier .model (XML) autour du centre donné.
+    Retourne les données modifiées (bytes)."""
+    try:
+        root = ET.fromstring(model_data)
+        # Les sommets sont dans des balises <vertex x=".." y=".." z=".."/>
+        vertices = root.findall(".//vertex")
+        if not vertices:
+            return model_data  # rien à modifier
+
+        xs = [float(v.attrib["x"]) for v in vertices]
+        ys = [float(v.attrib["y"]) for v in vertices]
+        zs = [float(v.attrib["z"]) for v in vertices]
+
+        # Calcul du barycentre
+        cx = sum(xs) / len(xs)
+        cy = sum(ys) / len(ys)
+        cz = sum(zs) / len(zs)
+
+        dx = center[0] - cx
+        dy = center[1] - cy
+        dz = center[2] - cz
+
+        # Application du décalage
+        for v in vertices:
+            v.set("x", str(float(v.attrib["x"]) + dx))
+            v.set("y", str(float(v.attrib["y"]) + dy))
+            v.set("z", str(float(v.attrib["z"]) + dz))
+
+        return ET.tostring(root, encoding="utf-8")
+    except Exception as e:
+        print("⚠️ Erreur recenter_vertices:", e)
+        return model_data
+
+def reset_item_transform(model_data, center=(CENTER_X, CENTER_Y, CENTER_Z)):
+    """Réinitialise la transformation d'un item .model pour le replacer au centre donné.
+    Retourne les données modifiées (bytes)."""
+    try:
+        root = ET.fromstring(model_data)
+        # Les matrices de transformation sont dans des balises <transform ...>
+        transforms = root.findall(".//transform")
+        for t in transforms:
+            # On force une translation vers le centre et on remet la rotation à l'identité
+            t.set("translation", f"{center[0]} {center[1]} {center[2]}")
+            t.set("rotation", "0 0 0 1")  # quaternion identité
+        return ET.tostring(root, encoding="utf-8")
+    except Exception as e:
+        print("⚠️ Erreur reset_item_transform:", e)
+        return model_data
+
+
+
 def export_selection_with_deflection(selection, out_3mf_path,
                                      linear_deflection=DEFAULT_LINEAR_DEFLECTION,
                                      angular_deflection=DEFAULT_ANGULAR_DEFLECTION):
@@ -335,15 +412,12 @@ def export_selection_with_deflection(selection, out_3mf_path,
                 pass
         doc.recompute()
 
-    
-    
+
 def export_replace_geometry():
     """Routine principale: exporte projet FreeCAD en .3mf, 
     remplace géométrie Qidi par celle de FreeCAD,
     applique options (recentrage, positions, params), lance slicer et 
-    commandes externes.
-    Entrées: document actif FreeCAD + options utilisateur. 
-    Sorties: fichier .3mf final prêt pour QidiStudio."""
+    commandes externes. Peut aussi générer un STL si demandé."""
     cfg = load_config()
     doc = FreeCAD.ActiveDocument
     if not doc:
@@ -377,7 +451,7 @@ def export_replace_geometry():
     linear_pref = cfg.get("linear_deflection", DEFAULT_LINEAR_DEFLECTION)
     angular_pref = cfg.get("angular_deflection", DEFAULT_ANGULAR_DEFLECTION)
 
-    keep_params, keep_positions, slicer_path, launch_slicer, linear_value, angular_value, extra_cmds = \
+    keep_params, keep_positions, generate_stl, slicer_path, launch_slicer, linear_value, angular_value, extra_cmds = \
         ask_user_options(slicer_path_pref, linear_pref, angular_pref)
 
     if slicer_path is None and launch_slicer is None:
@@ -407,6 +481,16 @@ def export_replace_geometry():
 
     print("Exportation FreeCAD terminée :", fc_3mf)
 
+    # 🔧 Génération STL si demandé
+    if generate_stl:
+        stl_path = base_name + ".stl"
+        try:
+            Mesh.export(selection, stl_path)
+            print("✅ STL généré :", stl_path)
+        except Exception as e:
+            show_message("Erreur", f"❌ Erreur lors de la génération du STL : {e}")
+
+    # --- suite logique de remplacement géométrie ---
     if os.path.exists(old_3mf):
         geom_entry = find_geom_file_in_3mf(fc_3mf)
         if not geom_entry:
@@ -481,7 +565,7 @@ def export_replace_geometry():
             except Exception as e:
                 show_message("Erreur", f"❌ Impossible d'exécuter la commande externe : {e}")
 
+
 # Lancement automatique
 if __name__ == "__main__":
     export_replace_geometry()
-
