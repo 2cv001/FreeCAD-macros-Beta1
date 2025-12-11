@@ -73,9 +73,14 @@ EXTRA_COMMANDS = [
 # Utilitaires UI / config
 # -------------------------
 def show_message(title, message):
+    """Affiche une boîte de dialogue avec titre et texte.
+    Entrées: title (str), text (str). Sorties: aucune (GUI)."""
     QtGui.QMessageBox.information(None, title, message)
 
 def load_config():
+    """Charge la configuration utilisateur depuis fichier JSON.
+    Entrées: aucune. Sorties: dict avec préférences (slicer, deflection, etc.)."""
+
     cfg = {
         "slicer_exe": DEFAULT_SLICER_EXE,
         "linear_deflection": DEFAULT_LINEAR_DEFLECTION,
@@ -104,6 +109,9 @@ def load_config():
     return cfg
 
 def save_slicer_path(path):
+    """Sauvegarde le chemin du slicer choisi par l’utilisateur.
+    Entrées: path (str). Sorties: aucune (sauvegarde fichier config)."""
+
     config = configparser.ConfigParser()
     # Charger l'existant si présent
     if os.path.exists(INI_FILE):
@@ -117,6 +125,10 @@ def save_slicer_path(path):
         config.write(f)
 
 def save_deflection_values(linear, angular):
+    """Sauvegarde les valeurs de déflection choisies.
+    Entrées: linear (float), angular (float). Sorties: aucune 
+    (sauvegarde fichier config)."""
+
     config = configparser.ConfigParser()
     # Charger l'existant si présent
     if os.path.exists(INI_FILE):
@@ -132,6 +144,11 @@ def save_deflection_values(linear, angular):
 
 
 def ask_user_options(current_slicer, current_linear, current_angular):
+    """Affiche boîte de dialogue pour options export (positions, params, slicer, 
+    deflection).
+    Entrées: slicer_path_pref (str), linear_pref (float), angular_pref (float).
+    Sorties: tuple (keep_params, keep_positions, slicer_path, launch_slicer, 
+    linear_value, angular_value, extra_cmds)."""
     dialog = QtGui.QDialog()
     dialog.setWindowTitle("Options d'export vers QidiStudio")
     dialog.setMinimumWidth(720)
@@ -248,6 +265,8 @@ def ask_user_options(current_slicer, current_linear, current_angular):
 # Fonctions de traitement 3MF / mesh
 # -------------------------
 def find_geom_file_in_3mf(zip_path):
+    """Cherche le fichier de géométrie principal dans une archive 3MF.
+    Entrées: fc_3mf (str chemin). Sorties: nom du fichier de géométrie ou None."""
     with zipfile.ZipFile(zip_path, 'r') as z:
         rels_name = "_rels/.rels"
         if rels_name in z.namelist():
@@ -274,6 +293,9 @@ def find_geom_file_in_3mf(zip_path):
     return None
 
 def reset_item_transform(model_data, center=(CENTER_X, CENTER_Y, CENTER_Z)):
+    """Réinitialise le transform d’un item dans 3dmodel.model.
+    Entrées: data (bytes XML), center (tuple X,Y,Z). Sorties: bytes XML modifié 
+    avec transform identité ou centré."""
     text = model_data.decode("utf-8")
     new_transform = f'transform="1 0 0 0 1 0 0 0 1 {center[0]} {center[1]} {center[2]}"'
     text = re.sub(r'(<item[^>]*?)\s+transform="[^"]+"', r'\1 ' + new_transform, text)
@@ -282,6 +304,10 @@ def reset_item_transform(model_data, center=(CENTER_X, CENTER_Y, CENTER_Z)):
 def export_selection_with_deflection(selection, out_3mf_path,
                                      linear_deflection=DEFAULT_LINEAR_DEFLECTION,
                                      angular_deflection=DEFAULT_ANGULAR_DEFLECTION):
+    """Exporte la sélection FreeCAD en 3MF avec déflection donnée.
+    Entrées: selection (objets FreeCAD), fc_3mf (str chemin), 
+    linear_deflection (float), angular_deflection (float).
+    Sorties: fichier .3mf généré."""
     doc = FreeCAD.ActiveDocument
     temp_objs = []
     try:
@@ -301,10 +327,42 @@ def export_selection_with_deflection(selection, out_3mf_path,
             except Exception:
                 pass
         doc.recompute()
+        
+        
+def recenter_vertices(model_data):
+    try:
+        # Enregistre le namespace par défaut pour éviter le préfixe ns0
+        ET.register_namespace('', "http://schemas.microsoft.com/3dmanufacturing/core/2015/02")
+
+        root = ET.fromstring(model_data.decode("utf-8"))
+        ns = {"ns": "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"}
+        verts = root.findall(".//ns:vertex", ns)
+
+        xs = [float(v.attrib["x"]) for v in verts]
+        ys = [float(v.attrib["y"]) for v in verts]
+        xc = (min(xs) + max(xs)) / 2.0
+        yc = (min(ys) + max(ys)) / 2.0
+
+        for v in verts:
+            v.attrib["x"] = str(float(v.attrib["x"]) - xc)
+            v.attrib["y"] = str(float(v.attrib["y"]) - yc)
+
+        # Retourne le XML sans ns0
+        return ET.tostring(root, encoding="utf-8", xml_declaration=False)
+    except Exception as e:
+        print("⚠️ Erreur recentrage vertex :", e)
+        return model_data
+
 # -------------------------
 # Routine principale
 # -------------------------
 def export_replace_geometry():
+    """Routine principale: exporte projet FreeCAD en .3mf, 
+    remplace géométrie Qidi par celle de FreeCAD,
+    applique options (recentrage, positions, params), lance slicer et 
+    commandes externes.
+    Entrées: document actif FreeCAD + options utilisateur. 
+    Sorties: fichier .3mf final prêt pour QidiStudio."""
     cfg = load_config()
     doc = FreeCAD.ActiveDocument
     if not doc:
@@ -385,8 +443,9 @@ def export_replace_geometry():
                 for item in old_zip.infolist():
                     data = old_zip.read(item.filename)
                     if item.filename.startswith("3D/Objects/") and item.filename.endswith(".model"):
-                        # Remplace toute géométrie d’objets par la nouvelle
-                        new_zip.writestr(item.filename, geom_data)
+                        # Recentrer les vertex avant d’écrire
+                        geom_data_centered = recenter_vertices(geom_data)
+                        new_zip.writestr(item.filename, geom_data_centered)
                     elif item.filename.endswith("3dmodel.model"):
                         # Réinitialise la position si demandé
                         if not keep_positions:
