@@ -20,7 +20,8 @@ import FreeCAD
 import FreeCADGui
 import Mesh
 import MeshPart
-from PySide import QtGui
+from PySide import QtGui, QtCore
+
 
 # -------------------------
 # Constantes et configuration
@@ -57,9 +58,16 @@ DEFAULT_ANGULAR_DEFLECTION = DEFAULT_ANGULAR_DEGREES * math.pi / 180.0
 #      "Allumer la lampe atelier ?", 5, True),
 # ]
 EXTRA_COMMANDS = [
-    (['curl', 'https://pijeedom/core/api/jeeApi.php?apikey=GmZOP&type=cmd&id=4042','--insecure'],
-     "Turn on and connect printer CR10 ?", 10, False)
+     (["calc.exe"], 
+     "Ouvrir la calculatrice Windows ?", 
+     0, 
+     False),
+
 ]
+
+
+
+
 
 # -------------------------
 # Utilitaires UI / config
@@ -139,55 +147,70 @@ def ask_user_options(current_slicer, current_linear, current_angular):
     chk_positions.setChecked(True)
     layout.addWidget(chk_positions)
 
-    chk_launch = QtGui.QCheckBox("Lancer le slicer après export")
-    chk_launch.setChecked(True)
-    layout.addWidget(chk_launch)
-
-    # Chemin du slicer
+    # Ligne combinée : case "Lancer le slicer" + champ chemin
     h_slicer = QtGui.QHBoxLayout()
-    h_slicer.addWidget(QtGui.QLabel("Chemin du slicer"))
+    chk_launch = QtGui.QCheckBox("Lancer le slicer")
+    chk_launch.setChecked(True)
+    h_slicer.addWidget(chk_launch)
+
     edit_slicer = QtGui.QLineEdit(current_slicer or "")
     edit_slicer.setMinimumWidth(420)
+    h_slicer.addWidget(edit_slicer, stretch=1)
+
     btn_browse = QtGui.QPushButton("Parcourir…")
     def browse():
         path, _ = QtGui.QFileDialog.getOpenFileName(dialog, "Choisir l'exécutable du slicer")
         if path:
             edit_slicer.setText(path)
     btn_browse.clicked.connect(browse)
-    h_slicer.addWidget(edit_slicer, stretch=1)
     h_slicer.addWidget(btn_browse)
+
     layout.addLayout(h_slicer)
 
     # Précision linéaire
     h_lin = QtGui.QHBoxLayout()
-    h_lin.addWidget(QtGui.QLabel("Précision (LinearDeflection) entre 0.01 et 10. Haute qualité : 0.01"))
+    lbl_lin = QtGui.QLabel("Précision (LinearDeflection) entre 0.01 et 10. Haute qualité : 0.01")
+    lbl_lin.setMinimumWidth(420)   # largeur identique pour les deux labels
+    h_lin.addWidget(lbl_lin)
+
     spin_lin = QtGui.QDoubleSpinBox()
     spin_lin.setRange(0.01, 10.0)
     spin_lin.setSingleStep(0.01)
     spin_lin.setDecimals(2)
+    spin_lin.setMaximumWidth(80)
     try:
         spin_lin.setValue(round(float(current_linear), 2))
     except Exception:
         spin_lin.setValue(DEFAULT_LINEAR_DEFLECTION)
     h_lin.addWidget(spin_lin)
+    h_lin.addStretch()
     layout.addLayout(h_lin)
 
-    # Tolérance angulaire (en degrés)
+    # Tolérance angulaire
     h_ang = QtGui.QHBoxLayout()
-    h_ang.addWidget(QtGui.QLabel("Tolérance angulaire (AngularDeflection) en degrés (ex: 3)"))
+    lbl_ang = QtGui.QLabel("Tolérance angulaire (AngularDeflection) en degrés (ex: 3)")
+    lbl_ang.setMinimumWidth(420)   # même largeur que lbl_lin
+    h_ang.addWidget(lbl_ang)
+
     spin_ang = QtGui.QDoubleSpinBox()
     spin_ang.setRange(1.0, 90.0)
     spin_ang.setSingleStep(1.0)
     spin_ang.setDecimals(1)
+    spin_ang.setMaximumWidth(80)
     try:
         deg = float(current_angular) * 180.0 / math.pi
         spin_ang.setValue(deg)
     except Exception:
         spin_ang.setValue(DEFAULT_ANGULAR_DEGREES)
     h_ang.addWidget(spin_ang)
+    h_ang.addStretch()
     layout.addLayout(h_ang)
 
-    # Cases pour les commandes externes (multi)
+
+
+
+
+    # Cases pour les commandes externes
     extra_checks = []
     if EXTRA_COMMANDS:
         layout.addWidget(QtGui.QLabel("Actions externes à exécuter avant fermeture :"))
@@ -220,7 +243,6 @@ def ask_user_options(current_slicer, current_linear, current_angular):
         )
     else:
         return (None, None, None, None, None, None, [])
-
 
 # -------------------------
 # Fonctions de traitement 3MF / mesh
