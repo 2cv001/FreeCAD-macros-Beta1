@@ -383,6 +383,43 @@ def reset_item_transform(model_data, center=(CENTER_X, CENTER_Y, CENTER_Z)):
 
 
 
+
+def export_stl_with_deflection(selection, stl_path,
+                               linear_deflection=DEFAULT_LINEAR_DEFLECTION,
+                               angular_deflection=DEFAULT_ANGULAR_DEFLECTION):
+    """Exporte la sélection FreeCAD en STL avec déflection donnée.
+    Entrées: selection (objets FreeCAD), stl_path (str chemin),
+    linear_deflection (float), angular_deflection (float).
+    Sorties: fichier .stl généré."""
+    doc = FreeCAD.ActiveDocument
+    temp_objs = []
+    try:
+        for obj in selection:
+            mesh = MeshPart.meshFromShape(
+                Shape=obj.Shape,
+                LinearDeflection=float(linear_deflection),
+                AngularDeflection=float(angular_deflection)
+            )
+            mobj = doc.addObject("Mesh::Feature", f"TempMeshSTL_{obj.Name}")
+            mobj.Mesh = mesh
+            temp_objs.append(mobj)
+        doc.recompute()
+        # Mesh.export(temp_objs, stl_path)
+        export_stl_with_deflection(selection, stl_path,
+                           linear_deflection=linear_value,
+                           angular_deflection=angular_value)
+
+        print("✅ STL généré avec déflection :", stl_path)
+    finally:
+        for t in temp_objs:
+            try:
+                doc.removeObject(t.Name)
+            except Exception:
+                pass
+        doc.recompute()
+
+
+
 def export_selection_with_deflection(selection, out_3mf_path,
                                      linear_deflection=DEFAULT_LINEAR_DEFLECTION,
                                      angular_deflection=DEFAULT_ANGULAR_DEFLECTION):
