@@ -28,8 +28,24 @@ DEFAULT_ANGULAR_DEGREES = 3.0
 DEFAULT_ANGULAR_DEFLECTION = DEFAULT_ANGULAR_DEGREES * math.pi / 180.0
 
 EXTRA_COMMANDS = [
-    (["calc.exe"], "Ouvrir la calculatrice Windows ?", 0, False),
-]
+    (["calc.exe"], "Ouvrir la calculatrice Windows ?", 0, False),   
+     ]
+
+def load_extra_commands_from_ini(path=INI_FILE):
+    """Charge EXTRA_COMMANDS depuis le fichier ini si présent."""
+    cfg = configparser.ConfigParser()
+    try:
+        cfg.read(path, encoding="utf-8")
+        if "extra_commands" in cfg and "EXTRA_COMMANDS" in cfg["extra_commands"]:
+            return ast.literal_eval(cfg["extra_commands"]["EXTRA_COMMANDS"])
+    except Exception as e:
+        print("⚠️ Erreur lecture EXTRA_COMMANDS ini:", e)
+    return []
+
+# Fusion au démarrage : commandes ini avant celles codées en dur
+EXTRA_COMMANDS = load_extra_commands_from_ini(INI_FILE) + EXTRA_COMMANDS
+
+
 
 # -------------------------
 # Traductions multilingues
@@ -134,19 +150,38 @@ def save_settings(linear=None, angular_rad=None, slicer_path=None):
     angular_deg = None
     if angular_rad is not None:
         angular_deg = angular_rad * 180.0 / math.pi
+
+    # Création initiale avec commentaires si le fichier n'existe pas
     if not os.path.exists(INI_FILE):
         with open(INI_FILE, "w", encoding="utf-8") as f:
             f.write(
                 "[Settings]\n"
+                "# linear_deflection : précision linéaire (float)\n"
+                "# angular_deflection_deg : tolérance angulaire en DEGRÉS (ex: 3.0)\n"
+                "# slicer_exe : chemin vers l'exécutable du slicer\n"
                 f"linear_deflection = {linear if linear is not None else DEFAULT_LINEAR_DEFLECTION}\n"
                 f"angular_deflection_deg = {angular_deg if angular_deg is not None else DEFAULT_ANGULAR_DEGREES}\n"
                 f"slicer_exe = {slicer_path if slicer_path else ''}\n\n"
-                "[extra_commands]\nEXTRA_COMMANDS = []\n"
+                "[extra_commands]\n"
+                "EXTRA_COMMANDS = [\n"
+                "# IMPORTANT :\n"
+                "# - Les valeurs doivent être indentées (au moins un espace ou une tabulation).\n"
+                "# - Exemple correct :\n"
+                "#     ([\"calc.exe\"], \"Ouvrir la calculatrice Windows ?\", 0, False),\n"
+                "#     ([\"curl\", \"https://pijeedom/core/api/jeeApi.php?apikey=...\", \"--insecure\"], \"Turn on Q1Pro ?\", 10, True)\n"
+                "#   → Ici la commande sera exécutée après 10 secondes si la case est cochée.\n"
+                "# Placez ici vos commandes personnalisées :\n"
+                "\n"
+                "    ]\n"
             )
         return
+
+    # Mise à jour ciblée de [Settings] si le fichier existe déjà
     with open(INI_FILE, "r", encoding="utf-8") as f:
         lines = f.readlines()
-    new_lines, in_settings = [], False
+
+    new_lines = []
+    in_settings = False
     for line in lines:
         if line.strip().startswith("[Settings]"):
             in_settings = True
@@ -156,14 +191,19 @@ def save_settings(linear=None, angular_rad=None, slicer_path=None):
             in_settings = False
         if in_settings:
             if line.strip().startswith("linear_deflection") and linear is not None:
-                new_lines.append(f"linear_deflection = {linear}\n"); continue
+                new_lines.append(f"linear_deflection = {linear}\n")
+                continue
             if line.strip().startswith("angular_deflection_deg") and angular_deg is not None:
-                new_lines.append(f"angular_deflection_deg = {angular_deg}\n"); continue
+                new_lines.append(f"angular_deflection_deg = {angular_deg}\n")
+                continue
             if line.strip().startswith("slicer_exe") and slicer_path is not None:
-                new_lines.append(f"slicer_exe = {slicer_path}\n"); continue
+                new_lines.append(f"slicer_exe = {slicer_path}\n")
+                continue
         new_lines.append(line)
+
     with open(INI_FILE, "w", encoding="utf-8") as f:
         f.writelines(new_lines)
+
 # -------------------------
 # Interface utilisateur
 # -------------------------
