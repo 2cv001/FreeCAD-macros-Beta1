@@ -12,7 +12,7 @@ import subprocess
 import re
 import fnmatch
 import xml.etree.ElementTree as ET
-import configparser
+import configparser, ast
 import platform
 import time
 
@@ -27,7 +27,7 @@ from PySide import QtGui, QtCore
 # Constantes et configuration
 # -------------------------
 INI_FILE = os.path.join(os.path.dirname(__file__), "3mfToPrint.ini")
-
+print('INI_FILE ', INI_FILE )
 CENTER_X = 120
 CENTER_Y = 120
 CENTER_Z = 2.5   # valeur par défaut Qidi
@@ -80,7 +80,6 @@ def show_message(title, message):
 def load_config():
     """Charge la configuration utilisateur depuis fichier JSON.
     Entrées: aucune. Sorties: dict avec préférences (slicer, deflection, etc.)."""
-
     cfg = {
         "slicer_exe": DEFAULT_SLICER_EXE,
         "linear_deflection": DEFAULT_LINEAR_DEFLECTION,
@@ -95,52 +94,282 @@ def load_config():
                 if "slicer_exe" in s:
                     cfg["slicer_exe"] = s.get("slicer_exe", cfg["slicer_exe"])
                 if "linear_deflection" in s:
-                    try:
-                        cfg["linear_deflection"] = float(s.get("linear_deflection", cfg["linear_deflection"]))
-                    except Exception:
-                        pass
-                if "angular_deflection" in s:
-                    try:
-                        cfg["angular_deflection"] = float(s.get("angular_deflection", cfg["angular_deflection"]))
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+                    cfg["linear_deflection"] = float(s.get("linear_deflection", cfg["linear_deflection"]))
+                if "angular_deflection_deg" in s:
+                    deg = float(s.get("angular_deflection_deg", DEFAULT_ANGULAR_DEGREES))
+                    cfg["angular_deflection"] = deg * math.pi / 180.0
+        except Exception as e:
+            print("⚠️ Erreur lecture ini:", e)
+    return cfg
+    
+def load_extra_commands_from_ini(path=INI_FILE):
+    """Charge EXTRA_COMMANDS depuis le fichier ini si présent.
+    Entrées: path (str chemin du fichier ini).
+    Sorties: liste de tuples (cmd_list, description, delay, wait_flag)."""
+    cfg = configparser.ConfigParser()
+    try:
+        cfg.read(path, encoding="utf-8")
+        if "extra_commands" in cfg and "EXTRA_COMMANDS" in cfg["extra_commands"]:
+            return ast.literal_eval(cfg["extra_commands"]["EXTRA_COMMANDS"])
+    except Exception as e:
+        print("⚠️ Erreur lecture EXTRA_COMMANDS ini:", e)
+    return []
+
+# Fusion au démarrage : commandes ini avant celles codées en dur
+EXTRA_COMMANDS = load_extra_commands_from_ini(INI_FILE) + EXTRA_COMMANDS
+
+
+
+
+
+
+
+def save_settings(linear=None, angular_rad=None, slicer_path=None):
+    """Met à jour les valeurs de déflection et/ou le chemin du slicer
+    sans perdre les commentaires du fichier ini.
+    - linear : float (précision linéaire)
+    - angular_rad : float (tolérance angulaire en radians, convertie en degrés)
+    - slicer_path : str (chemin vers l'exécutable du slicer)
+    """
+    angular_deg = None
+    if angular_rad is not None:
+        angular_deg = angular_rad * 180.0 / math.pi
+
+    # Création initiale avec commentaires si le fichier n'existe pas
+    if not os.path.exists(INI_FILE):
+        with open(INI_FILE, "w", encoding="utf-8") as f:
+            f.write(
+                "[Settings]\n"
+                "# linear_deflection : précision linéaire (float)\n"
+                "# angular_deflection_deg : tolérance angulaire en DEGRÉS (ex: 3.0)\n"
+                f"linear_deflection = {linear if linear is not None else DEFAULT_LINEAR_DEFLECTION}\n"
+                f"angular_deflection_deg = {angular_deg if angular_deg is not None else DEFAULT_ANGULAR_DEGREES}\n"
+                f"slicer_exe = {slicer_path if slicer_path else ''}\n\n"
+                "[extra_commands]\n"
+                "EXTRA_COMMANDS = [\n"
+                "# IMPORTANT :\n"
+                "# - Les valeurs doivent être indentées (au moins un espace ou une tabulation).\n"
+                "# - Exemple correct :\n"
+                "#     ([\"calc.exe\"], \"Ouvrir la calculatrice Windows ?\", 0, False),\n"
+                "#     ([\"curl\", \"https://pijeedom/core/api/jeeApi.php?apikey=...\", \"--insecure\"], \"Turn on Q1Pro ?\", 0, True)\n"
+                "# Placez ici vos commandes :\n"
+                "\n"
+                "\n"
+                "    ]\n"
+            )
+        print("✅ Fichier ini créé avec commentaires :", INI_FILE)
+        return
+
+    # Mise à jour ciblée de [Settings]
+    with open(INI_FILE, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    new_lines = []
+    in_settings = False
+    for line in lines:
+        if line.strip().startswith("[Settings]"):
+            in_settings = True
+            new_lines.append(line)
+            continue
+        if in_settings and line.strip().startswith("[") and not line.strip().startswith("[Settings]"):
+            in_settings = False
+        if in_settings:
+            if line.strip().startswith("linear_deflection") and linear is not None:
+                new_lines.append(f"linear_deflection = {linear}\n")
+                continue
+            if line.strip().startswith("angular_deflection_deg") and angular_deg is not None:
+                new_lines.append(f"angular_deflection_deg = {angular_deg}\n")
+                continue
+            if line.strip().startswith("slicer_exe") and slicer_path is not None:
+                new_lines.append(f"slicer_exe = {slicer_path}\n")
+                continue
+        new_lines.append(line)
+
+    with open(INI_FILE, "w", encoding="utf-8") as f:
+        f.writelines(new_lines)
+
+    print("✅ Mise à jour ini :", INI_FILE,
+          "linear=", linear, "angular_deg=", angular_deg, "slicer_exe=", slicer_path)
+
+
+
+
+
+
+
+
+
+
+def OOOOOOOLLLLLLLLLLLDDDDDDDDDDDDsave_slicer_path(path):
+    """Met à jour uniquement la ligne slicer_exe dans [Settings] sans casser les commentaires."""
+    # Si le fichier n'existe pas, on crée un squelette avec commentaires
+    if not os.path.exists(INI_FILE):
+        with open(INI_FILE, "w", encoding="utf-8") as f:
+            f.write(
+                "[Settings]\n"
+                "# linear_deflection : précision linéaire (float)\n"
+                "# angular_deflection_deg : tolérance angulaire en DEGRÉS (ex: 3.0)\n"
+                "linear_deflection = 0.01\n"
+                "angular_deflection_deg = 3.0\n"
+                "slicer_exe = \n\n"
+                "[extra_commands]\n"
+                "EXTRA_COMMANDS = [\n"
+                "# IMPORTANT :\n"
+                "# - Les valeurs doivent être indentées (au moins un espace ou une tabulation).\n"
+                "# - Exemple correct :\n"
+                "#     ([\"calc.exe\"], \"Ouvrir la calculatrice Windows ?\", 0, False),\n"
+                "#     ([\"curl\", \"https://pijeedom/core/api/jeeApi.php?apikey=...\", \"--insecure\"], \"Turn on Q1Pro ?\", 0, True)\n"
+                "# Placez ici vos commandes :\n"
+                "\n"
+                "\n"
+                "    ]\n"
+            )
+
+    # Lecture et réécriture ciblée
+    with open(INI_FILE, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    new_lines = []
+    in_settings = False
+    slicer_set = False
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+
+        if stripped.startswith("[Settings]"):
+            in_settings = True
+            new_lines.append(line)
+            continue
+
+        if in_settings and stripped.startswith("[") and not stripped.startswith("[Settings]"):
+            # sortie de la section Settings
+            in_settings = False
+
+        if in_settings and stripped.lower().startswith("slicer_exe"):
+            # remplace uniquement cette ligne
+            new_lines.append(f"slicer_exe = {path}\n")
+            slicer_set = True
+            continue
+
+        new_lines.append(line)
+
+    # Si la section Settings existe mais la ligne slicer_exe était absente, on l'ajoute après l'entête
+    if not slicer_set:
+        # Trouver l'indice du début de [Settings]
+        try:
+            idx = next(i for i, l in enumerate(new_lines) if l.strip().startswith("[Settings]")) + 1
+            new_lines.insert(idx, f"slicer_exe = {path}\n")
+        except StopIteration:
+            # Si pas de section Settings (cas improbable), on l’ajoute à la fin sans casser les commentaires existants
+            new_lines.append("\n[Settings]\n")
+            new_lines.append(f"slicer_exe = {path}\n")
+
+    with open(INI_FILE, "w", encoding="utf-8") as f:
+        f.writelines(new_lines)
+
+
+
+def OOOOOOOLLLLLLLDDDDDDDsave_deflection_values(linear, angular_rad):
+    angular_deg = angular_rad * 180.0 / math.pi
+
+    # Création initiale avec commentaires si le fichier n'existe pas
+    if not os.path.exists(INI_FILE):
+        with open(INI_FILE, "w", encoding="utf-8") as f:
+            f.write(
+                "[Settings]\n"
+                "# linear_deflection : précision linéaire (float)\n"
+                "# angular_deflection_deg : tolérance angulaire en DEGRÉS (ex: 3.0)\n"
+                f"linear_deflection = {linear}\n"
+                f"angular_deflection_deg = {angular_deg}\n"
+                "slicer_exe = \n\n"
+                "[extra_commands]\n"
+                "EXTRA_COMMANDS = [\n"
+                "# IMPORTANT :\n"
+                "# - Les valeurs doivent être indentées (au moins un espace ou une tabulation).\n"
+                "# - Exemple correct :\n"
+                "#     ([\"calc.exe\"], \"Ouvrir la calculatrice Windows ?\", 0, False),\n"
+                "#     ([\"curl\", \"https://pijeedom/core/api/jeeApi.php?apikey=...\", \"--insecure\"], \"Turn on Q1Pro ?\", 0, True)\n"
+                "# Placez ici vos commandes :\n"
+                "\n"
+                "\n"
+                "    ]\n"
+            )
+        print("✅ Fichier ini créé avec commentaires :", INI_FILE)
+        return
+
+    # Mise à jour ciblée de [Settings] sans toucher aux autres sections
+    with open(INI_FILE, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    new_lines = []
+    in_settings = False
+    for line in lines:
+        if line.strip().startswith("[Settings]"):
+            in_settings = True
+            new_lines.append(line)
+            continue
+        if in_settings:
+            if line.strip().startswith("[") and not line.strip().startswith("[Settings]"):
+                in_settings = False
+        if in_settings:
+            if line.strip().startswith("linear_deflection") or line.strip().startswith("angular_deflection_deg"):
+                continue
+        new_lines.append(line)
+
+    # Ajout des nouvelles valeurs juste après [Settings]
+    idx = next(i for i, l in enumerate(new_lines) if l.strip().startswith("[Settings]")) + 1
+    new_lines.insert(idx, f"linear_deflection = {linear}\n")
+    new_lines.insert(idx+1, f"angular_deflection_deg = {angular_deg}\n")
+
+    with open(INI_FILE, "w", encoding="utf-8") as f:
+        f.writelines(new_lines)
+
+    print("✅ Mise à jour ini :", INI_FILE, "linear=", linear, "angular_deg=", angular_deg)
+
+
+
+
+def load_config():
+    """Charge la configuration utilisateur depuis 3mfToPrint.ini.
+    Retourne un dict avec angular_deflection en radians pour FreeCAD."""
+    cfg = {
+        "slicer_exe": DEFAULT_SLICER_EXE,
+        "linear_deflection": DEFAULT_LINEAR_DEFLECTION,
+        "angular_deflection": DEFAULT_ANGULAR_DEFLECTION,  # radians en interne
+    }
+
+    if not os.path.exists(INI_FILE):
+        return cfg
+
+    try:
+        config = configparser.ConfigParser()
+        config.read(INI_FILE, encoding="utf-8")
+
+        # Section Settings
+        if "Settings" in config:
+            s = config["Settings"]
+
+            if "slicer_exe" in s:
+                cfg["slicer_exe"] = s.get("slicer_exe", cfg["slicer_exe"])
+
+            if "linear_deflection" in s:
+                try:
+                    cfg["linear_deflection"] = float(s.get("linear_deflection", cfg["linear_deflection"]))
+                except Exception:
+                    pass
+
+            # Lecture en degrés, conversion en radians
+            if "angular_deflection_deg" in s:
+                try:
+                    deg = float(s.get("angular_deflection_deg", DEFAULT_ANGULAR_DEGREES))
+                    cfg["angular_deflection"] = deg * math.pi / 180.0
+                except Exception:
+                    pass
+
+    except Exception as e:
+        print("⚠️ Erreur lecture ini:", e)
+
     return cfg
 
-def save_slicer_path(path):
-    """Sauvegarde le chemin du slicer choisi par l’utilisateur.
-    Entrées: path (str). Sorties: aucune (sauvegarde fichier config)."""
-
-    config = configparser.ConfigParser()
-    # Charger l'existant si présent
-    if os.path.exists(INI_FILE):
-        config.read(INI_FILE)
-    if "Settings" not in config:
-        config["Settings"] = {}
-    # Mettre à jour uniquement la clé slicer_exe
-    config["Settings"]["slicer_exe"] = path
-    # Réécrire le fichier complet
-    with open(INI_FILE, "w", encoding="utf-8") as f:
-        config.write(f)
-
-def save_deflection_values(linear, angular):
-    """Sauvegarde les valeurs de déflection choisies.
-    Entrées: linear (float), angular (float). Sorties: aucune 
-    (sauvegarde fichier config)."""
-
-    config = configparser.ConfigParser()
-    # Charger l'existant si présent
-    if os.path.exists(INI_FILE):
-        config.read(INI_FILE)
-    if "Settings" not in config:
-        config["Settings"] = {}
-    # Mettre à jour uniquement les clés de déflexion
-    config["Settings"]["linear_deflection"] = str(linear)
-    config["Settings"]["angular_deflection"] = str(angular)
-    # Réécrire le fichier complet
-    with open(INI_FILE, "w", encoding="utf-8") as f:
-        config.write(f)
 
 
 def ask_user_options(current_slicer, current_linear, current_angular):
@@ -408,10 +637,11 @@ def export_replace_geometry():
                 pass
         return
 
-    try:
-        save_deflection_values(linear_value, angular_value)
-    except Exception:
-        pass
+
+    #############""save_deflection_values(linear_value, angular_value)
+    save_settings(linear=linear_value, angular_rad=angular_value)
+
+    print("✅ Valeurs sauvegardées :", linear_value, angular_value)
 
     try:
         export_selection_with_deflection(selection, fc_3mf,
@@ -489,7 +719,9 @@ def export_replace_geometry():
 
         if slicer_path and os.path.exists(slicer_path):
             try:
-                save_slicer_path(slicer_path)
+                ##########"save_slicer_path(slicer_path)
+                save_settings(slicer_path=slicer_path)
+
             except Exception:
                 pass
     else:
