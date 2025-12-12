@@ -354,7 +354,7 @@ def reset_item_transform(model_data, center=(CENTER_X, CENTER_Y, CENTER_Z)):
     new_transform = f'transform="1 0 0 0 1 0 0 0 1 {center[0]} {center[1]} {center[2]}"'
     text = re.sub(r'(<item[^>]*?)\s+transform="[^"]+"', r'\1 ' + new_transform, text)
     return text.encode("utf-8")
-
+    
 def export_stl_with_deflection(selection, stl_path,
                                linear_deflection=DEFAULT_LINEAR_DEFLECTION,
                                angular_deflection=DEFAULT_ANGULAR_DEFLECTION):
@@ -400,22 +400,64 @@ def export_selection_with_deflection(selection, out_3mf_path,
             except Exception: pass
         doc.recompute()
 
+
+def force_zmax_in_transform(model_data, zmax):
+    """
+    Remplace uniquement la composante Z (12e valeur) du transform des <item> dans 3dmodel.model.
+    - Conserve X/Y et la matrice de rotation/échelle.
+    - zmax est un float (hauteur max des vertex) calculé par recenter_vertices.
+
+    Si plusieurs <item> existent, on les met tous à jour.
+    """
+    try:
+        text = model_data.decode("utf-8")
+
+        def repl(m):
+            nums = m.group(1).split()
+            # transform = 12 nombres : 9 pour la matrice, 3 pour la translation (X, Y, Z)
+            if len(nums) == 12:
+                nums[-1] = f"{zmax}"
+                return 'transform="' + " ".join(nums) + '"'
+            # Si format inattendu, on ne modifie pas
+            return m.group(0)
+
+        # Met à jour tous les transform="..."; count=0 = sans limite
+        text = re.sub(r'transform="([^"]+)"', repl, text, count=0)
+        return text.encode("utf-8")
+    except Exception as e:
+        print("⚠️ force_zmax_in_transform: échec, on garde le transform d'origine :", e)
+        return model_data
+
+
+
 def recenter_vertices(model_data):
+    """
+    Recentrage des vertex en X/Y et calcul du Zmax pour placement correct sur le plateau.
+    Retourne : (données XML modifiées, zmax)
+    """
     try:
         ET.register_namespace('', "http://schemas.microsoft.com/3dmanufacturing/core/2015/02")
         root = ET.fromstring(model_data.decode("utf-8"))
         ns = {"ns": "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"}
         verts = root.findall(".//ns:vertex", ns)
+
         xs = [float(v.attrib["x"]) for v in verts]
         ys = [float(v.attrib["y"]) for v in verts]
-        xc, yc = (min(xs)+max(xs))/2.0, (min(ys)+max(ys))/2.0
+        zs = [float(v.attrib["z"]) for v in verts]
+
+        # Calcul du centre XY et du Zmax
+        xc, yc = (min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0
+        zmax = max(zs)
+
+        # Recentrage XY
         for v in verts:
             v.attrib["x"] = str(float(v.attrib["x"]) - xc)
             v.attrib["y"] = str(float(v.attrib["y"]) - yc)
-        return ET.tostring(root, encoding="utf-8", xml_declaration=False)
+
+        return ET.tostring(root, encoding="utf-8", xml_declaration=False), zmax
     except Exception as e:
         print("⚠️ Erreur recentrage vertex :", e)
-        return model_data
+        return model_data, CENTER_Z
 
 # -------------------------
 # Routine principale
@@ -436,12 +478,14 @@ def export_replace_geometry():
     fc_3mf = base_name + ".3mf"
     old_3mf = base_name + ".old.3mf"
 
+    # Sauvegarde de l'ancien 3MF si présent
     if os.path.exists(fc_3mf):
         try:
             shutil.move(fc_3mf, old_3mf)
         except Exception:
             pass
 
+    # Vérification de la sélection
     selection = FreeCADGui.Selection.getSelection()
     if not selection:
         show_message("Avertissement", tr("warn_no_selection"))
@@ -450,10 +494,12 @@ def export_replace_geometry():
         show_message("Avertissement", tr("warn_multi_selection"))
         return
 
+    # Chargement des préférences
     slicer_path_pref = cfg.get("slicer_exe", DEFAULT_SLICER_EXE)
     linear_pref = cfg.get("linear_deflection", DEFAULT_LINEAR_DEFLECTION)
     angular_pref = cfg.get("angular_deflection", DEFAULT_ANGULAR_DEFLECTION)
 
+    # Boîte de dialogue utilisateur
     keep_params, keep_positions, generate_stl, slicer_path, launch_slicer, linear_value, angular_value, extra_cmds = \
         ask_user_options(slicer_path_pref, linear_pref, angular_pref)
 
@@ -466,9 +512,10 @@ def export_replace_geometry():
                 pass
         return
 
+    # Sauvegarde des paramètres choisis
     save_settings(linear=linear_value, angular_rad=angular_value)
-    # print("✅ Valeurs sauvegardées :", linear_value, angular_value)
 
+    # Export initial FreeCAD → 3MF
     try:
         export_selection_with_deflection(selection, fc_3mf,
                                          linear_deflection=linear_value,
@@ -481,8 +528,6 @@ def export_replace_geometry():
             except Exception:
                 pass
         return
-
-
 
     # Génération STL si demandé
     if generate_stl:
@@ -503,27 +548,41 @@ def export_replace_geometry():
         with zipfile.ZipFile(fc_3mf, 'r') as fc_zip:
             geom_data = fc_zip.read(geom_entry)
 
+        # 🔎 Étape clé : recentrage XY et calcul du Zmax
+        geom_data_centered, zmax = recenter_vertices(geom_data)
+
         tmp_new = base_name + ".new.3mf"
 
         try:
             with zipfile.ZipFile(old_3mf, 'r') as old_zip, zipfile.ZipFile(tmp_new, 'w') as new_zip:
                 for item in old_zip.infolist():
                     data = old_zip.read(item.filename)
+
+                    # Injection de la géométrie recentrée
                     if item.filename.startswith("3D/Objects/") and item.filename.endswith(".model"):
-                        geom_data_centered = recenter_vertices(geom_data)
                         new_zip.writestr(item.filename, geom_data_centered)
+
+                    # Ajustement du transform
                     elif item.filename.endswith("3dmodel.model"):
-                        if not keep_positions:
-                            data = reset_item_transform(data, center=(CENTER_X, CENTER_Y, CENTER_Z))
+                        if keep_positions:
+                            # ⚠️ On conserve X/Y existants mais on force Z = zmax
+                            data = force_zmax_in_transform(data, zmax)
+                        else:
+                            # ⚠️ On recalcule complètement X/Y/Z
+                            data = reset_item_transform(data, center=(CENTER_X, CENTER_Y, zmax))
                         new_zip.writestr(item.filename, data)
+
+                    # Suppression éventuelle des Metadata si demandé
                     elif not keep_params and item.filename.startswith("Metadata/"):
                         continue
+
                     else:
                         new_zip.writestr(item, data)
         except Exception as e:
             show_message("Erreur", f"❌ Erreur lors de la création du 3MF final : {e}")
             return
 
+        # Remplacement du fichier final
         try:
             if os.path.exists(fc_3mf):
                 os.remove(fc_3mf)
@@ -540,8 +599,7 @@ def export_replace_geometry():
         except Exception:
             pass
 
-
-
+        # Lancement du slicer si demandé
         if launch_slicer and slicer_path and os.path.exists(slicer_path):
             try:
                 subprocess.Popen([slicer_path, fc_3mf])
@@ -551,6 +609,7 @@ def export_replace_geometry():
             if not launch_slicer:
                 show_message("Info", tr("info_done"))
 
+        # Sauvegarde du chemin du slicer
         if slicer_path and os.path.exists(slicer_path):
             try:
                 save_settings(slicer_path=slicer_path)
