@@ -67,6 +67,18 @@ TRANSLATIONS = {
         "warn_multi_selection": "⚠️ Sélection multiple non supportée.",
         "info_cancel": "⚠️ Export annulé par l’utilisateur.",
         "info_done": "✅ Export terminé. Le slicer n'a pas été lancé (option décochée).",
+        "hint_linear": "Valeur plus petite = maillage plus fin.\nExemple : 0.01 = haute qualité, mais fichier lourd.\n"
+                             "Exemple : 0.1 = adapté à une imprimante FDM classique.",
+        "hint_angular": "Tolérance angulaire en degrés.\nPetite valeur = plus de détails, mais fichier plus lourd.",
+        "hint_positions": "Conserve la position XY sur le plateau.\n⚠️ Le Z est toujours recalculé pour éviter que l'objet soit sous le plateau.",
+        "external_actions": "Actions externes à exécuter avant fermeture :",
+        "no_external_actions": "Pas encore de commandes utilisateurs ajoutées.",
+        "hint_external_actions": "Vous pouvez ajouter vos propres actions dans le fichier ini, section [extra_commands].\n"
+                             "Chaque commande peut être configurée avec délai et activation par case à cocher.",
+        "hint_keep_params": "Conserve les paramètres du slicer (profil d'impression).",
+        "hint_generate_stl": "Génère aussi un fichier STL en plus du 3MF.",
+        "hint_launch_slicer": "Lance automatiquement le slicer après export si le chemin est valide.",
+
     },
     "en": {
         "options_title": "Export options to QidiStudio",
@@ -84,7 +96,19 @@ TRANSLATIONS = {
         "warn_multi_selection": "⚠️ Multiple selection not supported.",
         "info_cancel": "⚠️ Export cancelled by user.",
         "info_done": "✅ Export finished. Slicer was not launched (option unchecked).",
-    }
+        "hint_linear": "Smaller value = finer mesh.\nExample: 0.01 = high quality but heavy file.\n"
+                             "Example: 0.1 = suitable for standard FDM printer.",
+        "hint_angular": "Angular tolerance in degrees.\nSmaller value = more detail, but heavier file.",
+        "hint_positions": "Keeps XY position on the build plate.\n⚠️ Z is always recalculated to avoid sinking below the plate.",
+        "external_actions": "External actions to execute before closing:",
+        "hint_external_actions": "You can add your own actions in the ini file, section [extra_commands].\n"
+                             "Each command can be configured with delay and checkbox activation.",  
+        "hint_keep_params": "Keeps slicer parameters (printing profile).",
+        "hint_generate_stl": "Also generates an STL file along with the 3MF.",
+        "hint_launch_slicer": "Automatically launches the slicer after export if the path is valid.",
+
+ 
+   }
 }
 
 def get_user_language():
@@ -217,20 +241,24 @@ def ask_user_options(current_slicer, current_linear, current_angular):
 
     # Cases principales
     chk_params = QtGui.QCheckBox(tr("keep_params"))
+    chk_params.setToolTip(tr("hint_keep_params"))
     chk_params.setChecked(True)
     layout.addWidget(chk_params)
 
     chk_positions = QtGui.QCheckBox(tr("keep_positions"))
+    chk_positions.setToolTip(tr("hint_positions"))
     chk_positions.setChecked(True)
     layout.addWidget(chk_positions)
 
     chk_stl = QtGui.QCheckBox(tr("generate_stl"))
+    chk_stl.setToolTip(tr("hint_generate_stl"))
     chk_stl.setChecked(False)
     layout.addWidget(chk_stl)
 
     # Ligne combinée : case "Lancer le slicer" + champ chemin
     h_slicer = QtGui.QHBoxLayout()
     chk_launch = QtGui.QCheckBox(tr("launch_slicer"))
+    chk_launch.setToolTip(tr("hint_launch_slicer"))
     chk_launch.setChecked(True)
     h_slicer.addWidget(chk_launch)
 
@@ -254,6 +282,7 @@ def ask_user_options(current_slicer, current_linear, current_angular):
     h_lin.addWidget(lbl_lin)
 
     spin_lin = QtGui.QDoubleSpinBox()
+    spin_lin.setToolTip(tr("hint_linear"))
     spin_lin.setRange(0.01, 10.0)
     spin_lin.setSingleStep(0.01)
     spin_lin.setDecimals(2)
@@ -273,6 +302,7 @@ def ask_user_options(current_slicer, current_linear, current_angular):
     h_ang.addWidget(lbl_ang)
 
     spin_ang = QtGui.QDoubleSpinBox()
+    spin_ang.setToolTip(tr("hint_angular"))
     spin_ang.setRange(1.0, 90.0)
     spin_ang.setSingleStep(1.0)
     spin_ang.setDecimals(1)
@@ -289,12 +319,20 @@ def ask_user_options(current_slicer, current_linear, current_angular):
     # Cases pour les commandes externes
     extra_checks = []
     if EXTRA_COMMANDS:
-        layout.addWidget(QtGui.QLabel(tr("external_actions")))
-    for cmd, label, delay, default in EXTRA_COMMANDS:
-        chk = QtGui.QCheckBox(label)
-        chk.setChecked(default)
-        layout.addWidget(chk)
-        extra_checks.append((chk, cmd, delay))
+        lbl_ext = QtGui.QLabel(tr("external_actions"))
+        lbl_ext.setToolTip(tr("hint_external_actions") + f"\n\nFichier ini : {INI_FILE}")
+        layout.addWidget(lbl_ext)
+        for cmd, label, delay, default in EXTRA_COMMANDS:
+            chk = QtGui.QCheckBox(label)
+            chk.setChecked(default)
+            layout.addWidget(chk)
+            extra_checks.append((chk, cmd, delay))
+    else:
+        # 👉 Afficher un libellé même si aucune commande n'est définie
+        lbl_ext = QtGui.QLabel(tr("no_external_actions"))
+        lbl_ext.setToolTip(tr("hint_external_actions") + f"\n\nFichier ini : {INI_FILE}")
+        layout.addWidget(lbl_ext)
+
 
     # Boutons OK/Annuler
     btns = QtGui.QDialogButtonBox(QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Cancel)
@@ -487,6 +525,22 @@ def export_replace_geometry():
 
     # Vérification de la sélection
     selection = FreeCADGui.Selection.getSelection()
+    
+    # Filtrer la sélection : ne garder que les objets avec un Shape
+    selection = [obj for obj in selection if hasattr(obj, "Shape") and obj.Shape is not None]
+
+    # Si aucun objet exportable
+    if not selection:
+        show_message("Avertissement", "⚠️ Aucun objet exportable (Shape manquant).")
+        return
+
+    # Si plusieurs objets exportables → non supporté
+    if len(selection) > 1:
+        show_message("Avertissement", tr("warn_multi_selection"))
+        return
+
+    
+    
     if not selection:
         show_message("Avertissement", tr("warn_no_selection"))
         return
