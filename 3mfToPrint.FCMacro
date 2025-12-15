@@ -31,8 +31,8 @@ EXTRA_COMMANDS = [
     #(["calc.exe"], "Ouvrir la calculatrice Windows ?", 0, False),   
      ]
 
+# Charge les commandes externes définies dans le fichier ini
 def load_extra_commands_from_ini(path=INI_FILE):
-    """Charge EXTRA_COMMANDS depuis le fichier ini si présent."""
     cfg = configparser.ConfigParser()
     try:
         cfg.read(path, encoding="utf-8")
@@ -111,6 +111,7 @@ TRANSLATIONS = {
    }
 }
 
+# Détermine la langue de l’utilisateur à partir de FreeCADGui
 def get_user_language():
     try:
         locale = FreeCADGui.getLocale().lower()
@@ -134,7 +135,7 @@ def get_user_language():
 
 
 
-
+# Traduit une clé donnée selon la langue utilisateur
 def tr(key):
     lang = get_user_language()
     return TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key, key)
@@ -144,9 +145,11 @@ def tr(key):
 # -------------------------
 # Utilitaires UI / config
 # -------------------------
+# Affiche une boîte de message d’information dans FreeCAD
 def show_message(title, message):
     QtGui.QMessageBox.information(None, title, message)
 
+# Charge la configuration (slicer, déflections) depuis le fichier ini
 def load_config():
     cfg = {
         "slicer_exe": DEFAULT_SLICER_EXE,
@@ -170,6 +173,7 @@ def load_config():
             print("⚠️ Erreur lecture ini:", e)
     return cfg
 
+# Sauvegarde les paramètres (déflections, chemin slicer) dans le fichier ini
 def save_settings(linear=None, angular_rad=None, slicer_path=None):
     angular_deg = None
     if angular_rad is not None:
@@ -231,6 +235,7 @@ def save_settings(linear=None, angular_rad=None, slicer_path=None):
 # -------------------------
 # Interface utilisateur
 # -------------------------
+# Affiche une boîte de dialogue pour demander les options d’export à l’utilisateur
 def ask_user_options(current_slicer, current_linear, current_angular):
     """Affiche boîte de dialogue pour options export (positions, params, STL, slicer, deflection)."""
     dialog = QtGui.QDialog()
@@ -362,6 +367,7 @@ def ask_user_options(current_slicer, current_linear, current_angular):
 # -------------------------
 # Fonctions de traitement 3MF / mesh
 # -------------------------
+# Recherche le fichier de géométrie principal dans une archive 3MF
 def find_geom_file_in_3mf(zip_path):
     with zipfile.ZipFile(zip_path, 'r') as z:
         rels_name = "_rels/.rels"
@@ -387,12 +393,14 @@ def find_geom_file_in_3mf(zip_path):
             return "3D/3dmodel.model"
     return None
 
+# Réinitialise la transformation des items en les centrant sur un point donné
 def reset_item_transform(model_data, center=(CENTER_X, CENTER_Y, CENTER_Z)):
     text = model_data.decode("utf-8")
     new_transform = f'transform="1 0 0 0 1 0 0 0 1 {center[0]} {center[1]} {center[2]}"'
     text = re.sub(r'(<item[^>]*?)\s+transform="[^"]+"', r'\1 ' + new_transform, text)
     return text.encode("utf-8")
-    
+
+# Exporte une sélection en STL avec paramètres de tessellation    
 def export_stl_with_deflection(selection, stl_path,
                                linear_deflection=DEFAULT_LINEAR_DEFLECTION,
                                angular_deflection=DEFAULT_ANGULAR_DEFLECTION):
@@ -416,6 +424,7 @@ def export_stl_with_deflection(selection, stl_path,
             except Exception: pass
         doc.recompute()
 
+# Exporte une sélection en 3MF avec paramètres de tessellation
 def export_selection_with_deflection(selection, out_3mf_path,
                                      linear_deflection=DEFAULT_LINEAR_DEFLECTION,
                                      angular_deflection=DEFAULT_ANGULAR_DEFLECTION):
@@ -439,6 +448,7 @@ def export_selection_with_deflection(selection, out_3mf_path,
         doc.recompute()
 
 
+# Force uniquement la composante Z des transformations dans le modèle 3MF
 def force_zmax_in_transform(model_data, zmax):
     """
     Remplace uniquement la composante Z (12e valeur) du transform des <item> dans 3dmodel.model.
@@ -467,7 +477,7 @@ def force_zmax_in_transform(model_data, zmax):
         return model_data
 
 
-
+# Recentre les sommets en XY et calcule le Zmax pour placement correct
 def recenter_vertices(model_data):
     """
     Recentrage des vertex en X/Y et calcul du Zmax pour placement correct sur le plateau.
@@ -500,6 +510,8 @@ def recenter_vertices(model_data):
 # -------------------------
 # Routine principale
 # -------------------------
+# Routine principale : exporte la sélection en 3MF/STL, injecte géométrie, 
+# lance slicer et commandes externes
 def export_replace_geometry():
     cfg = load_config()
     doc = FreeCAD.ActiveDocument
@@ -652,7 +664,7 @@ def export_replace_geometry():
                 os.remove(old_3mf)
         except Exception:
             pass
-
+        print("✅ Export avec récupération des paramètres du slicer :", fc_3mf)
         # Lancement du slicer si demandé
         if launch_slicer and slicer_path and os.path.exists(slicer_path):
             try:
