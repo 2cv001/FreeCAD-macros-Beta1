@@ -16,11 +16,13 @@ TRANSLATIONS = {
         "col_delay": "Délai (s)",
         "col_default": "Activé par défaut",
         "hint_command": (
-            "Commande à exécuter :\n"
-            "Exemple simple : calc.exe\n"
-            "Exemple avec arguments : curl https://monserveur/api --insecure\n"
+            "<b>Commande à exécuter :</b><br>"
+            "Exemple simple : calc.exe<br>"
+            "Exemple avec arguments : curl https://monserveur/api --insecure<br>"
             "Exemple requête HTTP avec argument : curl -X POST https://domotique/api "
-            "-d 'apikey=12345&action=on'"
+            "-d 'apikey=12345&action=on'<br>"
+            "Exemple Shelly Gen2 : curl -u admin:motDePass --insecure "
+            "http://IpDeLaPriseShelly/rpc/Switch.Set?id=0&on=true"
         ),
         "hint_label": "Texte affiché dans la case à cocher.",
         "hint_delay": "Délai en secondes avant exécution.",
@@ -30,7 +32,7 @@ TRANSLATIONS = {
         "new_program": "Nouveau programme",
         "tooltip_cmd": "Programme + arguments, ex: calc.exe ou curl https://... --insecure",
         "tooltip_label": "Texte affiché à l’utilisateur",
-        "tooltip_delay": "Temps d’attente avant exécution",
+        "tooltip_delay": "Temps d’attente avant exécution"
     },
     "en": {
         "dialog_title": "User Programs",
@@ -39,11 +41,13 @@ TRANSLATIONS = {
         "col_delay": "Delay (s)",
         "col_default": "Enabled by default",
         "hint_command": (
-            "Command to execute:\n"
-            "Simple example: calc.exe\n"
-            "Example with arguments: curl https://myserver/api --insecure\n"
+            "<b>Command to execute:</b><br>"
+            "Simple example: calc.exe<br>"
+            "Example with arguments: curl https://myserver/api --insecure<br>"
             "HTTP request with argument: curl -X POST https://domotics/api "
-            "-d 'apikey=12345&action=on'"
+            "-d 'apikey=12345&action=on'<br>"
+            "Shelly Gen2 example: curl -u admin:password --insecure "
+            "http://ShellyDeviceIP/rpc/Switch.Set?id=0&on=true"
         ),
         "hint_label": "Text displayed in the checkbox.",
         "hint_delay": "Delay in seconds before execution.",
@@ -53,9 +57,11 @@ TRANSLATIONS = {
         "new_program": "New program",
         "tooltip_cmd": "Program + arguments, e.g. calc.exe or curl https://... --insecure",
         "tooltip_label": "Text displayed to the user",
-        "tooltip_delay": "Waiting time before execution",
+        "tooltip_delay": "Waiting time before execution"
     }
 }
+
+
 
 def get_user_language():
     try:
@@ -121,12 +127,22 @@ def show_extra_commands_dialog():
 
     table = QtGui.QTableWidget()
     table.setColumnCount(4)
-    table.setHorizontalHeaderLabels([
-        tr("col_command"),
-        tr("col_label"),
-        tr("col_delay"),
-        tr("col_default")
-    ])
+
+    # Création des items d'en-tête avec tooltips
+    header_items = [
+        QtGui.QTableWidgetItem(tr("col_command")),
+        QtGui.QTableWidgetItem(tr("col_label")),
+        QtGui.QTableWidgetItem(tr("col_delay")),
+        QtGui.QTableWidgetItem(tr("col_default"))
+    ]
+
+    header_items[0].setToolTip(tr("hint_command"))
+    header_items[1].setToolTip(tr("hint_label"))
+    header_items[2].setToolTip(tr("hint_delay"))
+    header_items[3].setToolTip(tr("hint_default"))
+
+    for i, item in enumerate(header_items):
+        table.setHorizontalHeaderItem(i, item)
 
     header = table.horizontalHeader()
     header.setStretchLastSection(False)
@@ -138,11 +154,7 @@ def show_extra_commands_dialog():
     table.setColumnWidth(2, 80)
     table.setColumnWidth(3, 120)
 
-    table.horizontalHeaderItem(0).setToolTip(tr("hint_command"))
-    table.horizontalHeaderItem(1).setToolTip(tr("hint_label"))
-    table.horizontalHeaderItem(2).setToolTip(tr("hint_delay"))
-    table.horizontalHeaderItem(3).setToolTip(tr("hint_default"))
-
+    # Chargement des commandes existantes
     EXTRA_COMMANDS = load_extra_commands_from_ini(INI_FILE)
     for cmd, label, delay, default in EXTRA_COMMANDS:
         row = table.rowCount()
@@ -165,6 +177,7 @@ def show_extra_commands_dialog():
 
     layout.addWidget(table)
 
+    # Boutons Ajouter / Supprimer
     btn_add = QtGui.QPushButton(tr("btn_add"))
     btn_del = QtGui.QPushButton(tr("btn_del"))
     h_btns = QtGui.QHBoxLayout()
@@ -190,6 +203,7 @@ def show_extra_commands_dialog():
     btn_add.clicked.connect(add_row)
     btn_del.clicked.connect(del_row)
 
+    # Boutons OK / Annuler
     btns = QtGui.QDialogButtonBox(QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Cancel)
     layout.addWidget(btns)
     dialog.setLayout(layout)
