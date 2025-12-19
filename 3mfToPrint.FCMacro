@@ -28,8 +28,15 @@ DEFAULT_ANGULAR_DEGREES = 3.0
 DEFAULT_ANGULAR_DEFLECTION = DEFAULT_ANGULAR_DEGREES * math.pi / 180.0
 
 EXTRA_COMMANDS = [
-    #(["calc.exe"], "Ouvrir la calculatrice Windows ?", 0, False),   
-     ]
+    #(["calc.exe"], "Ouvrir la calculatrice Windows ?", 0, False),
+    #(["curl", "-u", "admin:motDePass", "--insecure",
+    #  "http://IpDeLaPriseShelly/rpc/Switch.Set?id=0&on=true"],
+    #  "Allumer la prise Shelly Gen2 ?", 0, False),
+]
+
+
+     
+     
 
 # Charge les commandes externes définies dans le fichier ini
 def load_extra_commands_from_ini(path=INI_FILE):
@@ -52,6 +59,12 @@ EXTRA_COMMANDS = load_extra_commands_from_ini(INI_FILE) + EXTRA_COMMANDS
 # -------------------------
 TRANSLATIONS = {
     "fr": {
+        # Titres
+        "error_title": "Erreur",
+        "warn_title": "Avertissement",
+        "info_title": "Info",
+
+        # Options UI
         "options_title": "Options d'export vers QidiStudio",
         "keep_params": "Conserver les paramètres d'impression (profil du slicer)",
         "keep_positions": "Conserver les positions sur le plateau",
@@ -61,26 +74,48 @@ TRANSLATIONS = {
         "linear_label": "Précision (LinearDeflection) entre 0.01 et 10. Haute qualité : 0.01",
         "angular_label": "Tolérance angulaire (AngularDeflection) en degrés (ex: 3)",
         "external_actions": "Actions externes à exécuter avant fermeture :",
+
+        # Messages d'erreur / avertissement
         "error_no_doc": "❌ Aucun document ouvert dans FreeCAD.",
         "error_no_save": "❌ Le projet n'a pas encore été sauvegardé.",
         "warn_no_selection": "⚠️ Aucun objet sélectionné.",
         "warn_multi_selection": "⚠️ Sélection multiple non supportée.",
+        "error_write_ini": "❌ Écriture impossible sur le fichier ini :",
+        "error_export_3mf": "❌ Erreur lors de l'export 3MF :",
+        "error_generate_stl": "❌ Erreur lors de la génération du STL :",
+        "error_create_3mf": "❌ Erreur lors de la création du 3MF final :",
+        "error_replace_3mf": "❌ Impossible de remplacer le 3MF :",
+        "error_launch_slicer": "❌ Erreur lors du lancement du slicer :",
+        "error_external_cmd": "❌ Impossible d'exécuter la commande externe :",
+        "error_no_geom": "❌ Aucun fichier de géométrie détecté dans le 3MF exporté.",
+        "error_invalid_slicer": "❌ Le chemin du slicer est invalide :",
+
+        # Infos
         "info_cancel": "⚠️ Export annulé par l’utilisateur.",
         "info_done": "✅ Export terminé. Le slicer n'a pas été lancé (option décochée).",
+        "info_export_fc": "✅ Fichier généré uniquement par FreeCAD :",
+        "info_export_slicer": "✅ Export avec récupération des paramètres du slicer :",
+
+        # Aides / tooltips
         "hint_linear": "Valeur plus petite = maillage plus fin.\nExemple : 0.01 = haute qualité, mais fichier lourd.\n"
-                             "Exemple : 0.1 = adapté à une imprimante FDM classique.",
+                       "Exemple : 0.1 = adapté à une imprimante FDM classique.",
         "hint_angular": "Tolérance angulaire en degrés.\nPetite valeur = plus de détails, mais fichier plus lourd.",
         "hint_positions": "Conserve la position XY sur le plateau.\n⚠️ Le Z est toujours recalculé pour éviter que l'objet soit sous le plateau.",
-        "external_actions": "Actions externes à exécuter avant fermeture :",
         "no_external_actions": "Pas encore de commandes utilisateurs ajoutées.",
         "hint_external_actions": "Vous pouvez ajouter vos propres actions dans le fichier ini, section [extra_commands].\n"
-                             "Chaque commande peut être configurée avec délai et activation par case à cocher.",
+                                 "Chaque commande peut être configurée avec délai et activation par case à cocher.",
         "hint_keep_params": "Conserve les paramètres du slicer (profil d'impression).",
         "hint_generate_stl": "Génère aussi un fichier STL en plus du 3MF.",
         "hint_launch_slicer": "Lance automatiquement le slicer après export si le chemin est valide.",
-
     },
+
     "en": {
+        # Titles
+        "error_title": "Error",
+        "warn_title": "Warning",
+        "info_title": "Info",
+
+        # UI options
         "options_title": "Export options to QidiStudio",
         "keep_params": "Keep printing parameters (slicer profile)",
         "keep_positions": "Keep positions on the build plate",
@@ -90,26 +125,42 @@ TRANSLATIONS = {
         "linear_label": "Precision (LinearDeflection) between 0.01 and 10. High quality: 0.01",
         "angular_label": "Angular tolerance (AngularDeflection) in degrees (e.g. 3)",
         "external_actions": "External actions to execute before closing:",
+
+        # Error / warning messages
         "error_no_doc": "❌ No document open in FreeCAD.",
         "error_no_save": "❌ The project has not been saved yet.",
         "warn_no_selection": "⚠️ No object selected.",
         "warn_multi_selection": "⚠️ Multiple selection not supported.",
+        "error_write_ini": "❌ Unable to write to ini file:",
+        "error_export_3mf": "❌ Error during 3MF export:",
+        "error_generate_stl": "❌ Error during STL generation:",
+        "error_create_3mf": "❌ Error while creating final 3MF:",
+        "error_replace_3mf": "❌ Unable to replace 3MF:",
+        "error_launch_slicer": "❌ Error while launching slicer:",
+        "error_external_cmd": "❌ Unable to execute external command:",
+        "error_no_geom": "❌ No geometry file detected in exported 3MF.",
+        "error_invalid_slicer": "❌ Invalid slicer path:",
+
+        # Infos
         "info_cancel": "⚠️ Export cancelled by user.",
         "info_done": "✅ Export finished. Slicer was not launched (option unchecked).",
+        "info_export_fc": "✅ File generated only by FreeCAD:",
+        "info_export_slicer": "✅ Export with slicer parameters recovered:",
+
+        # Tooltips
         "hint_linear": "Smaller value = finer mesh.\nExample: 0.01 = high quality but heavy file.\n"
-                             "Example: 0.1 = suitable for standard FDM printer.",
+                       "Example: 0.1 = suitable for standard FDM printer.",
         "hint_angular": "Angular tolerance in degrees.\nSmaller value = more detail, but heavier file.",
         "hint_positions": "Keeps XY position on the build plate.\n⚠️ Z is always recalculated to avoid sinking below the plate.",
-        "external_actions": "External actions to execute before closing:",
+        "no_external_actions": "No user commands added yet.",
         "hint_external_actions": "You can add your own actions in the ini file, section [extra_commands].\n"
-                             "Each command can be configured with delay and checkbox activation.",  
+                                 "Each command can be configured with delay and checkbox activation.",
         "hint_keep_params": "Keeps slicer parameters (printing profile).",
         "hint_generate_stl": "Also generates an STL file along with the 3MF.",
         "hint_launch_slicer": "Automatically launches the slicer after export if the path is valid.",
-
- 
-   }
+    }
 }
+
 
 # Détermine la langue de l’utilisateur à partir de FreeCADGui
 def get_user_language():
@@ -174,7 +225,7 @@ def load_config():
     return cfg
 
 # Sauvegarde les paramètres (déflections, chemin slicer) dans le fichier ini
-def save_settings(linear=None, angular_rad=None, slicer_path=None):
+def save_settings(linear, angular_rad, slicer_path):
     angular_deg = None
     if angular_rad is not None:
         angular_deg = angular_rad * 180.0 / math.pi
@@ -187,22 +238,15 @@ def save_settings(linear=None, angular_rad=None, slicer_path=None):
                 "# linear_deflection : précision linéaire (float)\n"
                 "# angular_deflection_deg : tolérance angulaire en DEGRÉS (ex: 3.0)\n"
                 "# slicer_exe : chemin vers l'exécutable du slicer\n"
-                f"linear_deflection = {linear if linear is not None else DEFAULT_LINEAR_DEFLECTION}\n"
-                f"angular_deflection_deg = {angular_deg if angular_deg is not None else DEFAULT_ANGULAR_DEGREES}\n"
-                f"slicer_exe = {slicer_path if slicer_path else ''}\n\n"
+                f"linear_deflection = {linear}\n"
+                f"angular_deflection_deg = {angular_deg}\n"
+                f"slicer_exe = {slicer_path}\n\n"
                 "[extra_commands]\n"
                 "EXTRA_COMMANDS = [\n"
-                "# IMPORTANT :\n"
-                "# - Les valeurs doivent être indentées (au moins un espace ou une tabulation).\n"
-                "# - Exemple correct :\n"
-                "#     ([\"calc.exe\"], \"Ouvrir la calculatrice Windows ?\", 0, False),\n"
-                "#     ([\"curl\", \"https://pijeedom/core/api/jeeApi.php?apikey=...\", \"--insecure\"], \"Turn on Q1Pro ?\", 10, True)\n"
-                "#   → Ici la commande sera exécutée après 10 secondes si la case est cochée.\n"
-                "# Placez ici vos commandes personnalisées :\n"
-                "\n"
                 "    ]\n"
             )
         return
+
 
     # Mise à jour ciblée de [Settings] si le fichier existe déjà
     with open(INI_FILE, "r", encoding="utf-8") as f:
@@ -512,16 +556,18 @@ def recenter_vertices(model_data):
 # -------------------------
 # Routine principale : exporte la sélection en 3MF/STL, injecte géométrie, 
 # lance slicer et commandes externes
+
+    
 def export_replace_geometry():
     cfg = load_config()
     doc = FreeCAD.ActiveDocument
     if not doc:
-        show_message("Erreur", tr("error_no_doc"))
+        show_message(tr("error_title"), tr("error_no_doc"))
         return
 
     fcstd_path = doc.FileName
     if not fcstd_path:
-        show_message("Erreur", tr("error_no_save"))
+        show_message(tr("error_title"), tr("error_no_save"))
         return
 
     base_name = os.path.splitext(fcstd_path)[0]
@@ -537,27 +583,13 @@ def export_replace_geometry():
 
     # Vérification de la sélection
     selection = FreeCADGui.Selection.getSelection()
-    
-    # Filtrer la sélection : ne garder que les objets avec un Shape
     selection = [obj for obj in selection if hasattr(obj, "Shape") and obj.Shape is not None]
 
-    # Si aucun objet exportable
     if not selection:
-        show_message("Avertissement", "⚠️ Aucun objet exportable (Shape manquant).")
-        return
-
-    # Si plusieurs objets exportables → non supporté
-    if len(selection) > 1:
-        show_message("Avertissement", tr("warn_multi_selection"))
-        return
-
-    
-    
-    if not selection:
-        show_message("Avertissement", tr("warn_no_selection"))
+        show_message(tr("warn_title"), tr("warn_no_selection"))
         return
     if len(selection) > 1:
-        show_message("Avertissement", tr("warn_multi_selection"))
+        show_message(tr("warn_title"), tr("warn_multi_selection"))
         return
 
     # Chargement des préférences
@@ -565,29 +597,42 @@ def export_replace_geometry():
     linear_pref = cfg.get("linear_deflection", DEFAULT_LINEAR_DEFLECTION)
     angular_pref = cfg.get("angular_deflection", DEFAULT_ANGULAR_DEFLECTION)
 
-    # Boîte de dialogue utilisateur
-    keep_params, keep_positions, generate_stl, slicer_path, launch_slicer, linear_value, angular_value, extra_cmds = \
-        ask_user_options(slicer_path_pref, linear_pref, angular_pref)
+    # 🔎 Boucle de dialogue avec contrôle du chemin slicer
+    while True:
+        keep_params, keep_positions, generate_stl, slicer_path, launch_slicer, linear_value, angular_value, extra_cmds = \
+            ask_user_options(slicer_path_pref, linear_pref, angular_pref)
 
-    if slicer_path is None and launch_slicer is None:
-        show_message("Info", tr("info_cancel"))
-        if os.path.exists(old_3mf) and not os.path.exists(fc_3mf):
-            try:
-                shutil.move(old_3mf, fc_3mf)
-            except Exception:
-                pass
-        return
+        # Si l’utilisateur annule → sortie
+        if slicer_path is None and launch_slicer is None:
+            show_message(tr("info_title"), tr("info_cancel"))
+            if os.path.exists(old_3mf) and not os.path.exists(fc_3mf):
+                try:
+                    shutil.move(old_3mf, fc_3mf)
+                except Exception:
+                    pass
+            return
+
+        # ⚠️ Vérification du chemin slicer uniquement si lancement demandé
+        if launch_slicer and slicer_path and not os.path.exists(slicer_path):
+            show_message(tr("error_title"), f"{tr('error_invalid_slicer')}\n{slicer_path}")
+            # → on reboucle pour redemander les options
+            continue
+
+        # ✅ Si on arrive ici, le chemin est valide ou le lancement du slicer est décoché
+        break
 
     # Sauvegarde des paramètres choisis
-    save_settings(linear=linear_value, angular_rad=angular_value)
-
+    save_settings(linear=linear_value, angular_rad=angular_value, slicer_path=slicer_path)
+    print("⚙️ Paramètres sauvegardés, on continue l’export…")
+   
+    
     # Export initial FreeCAD → 3MF
     try:
         export_selection_with_deflection(selection, fc_3mf,
                                          linear_deflection=linear_value,
                                          angular_deflection=angular_value)
     except Exception as e:
-        show_message("Erreur", f"❌ Erreur lors de l'export 3MF : {e}")
+        show_message(tr("error_title"), f"{tr('error_export_3mf')} {e}")
         if os.path.exists(old_3mf) and not os.path.exists(fc_3mf):
             try:
                 shutil.move(old_3mf, fc_3mf)
@@ -603,13 +648,13 @@ def export_replace_geometry():
                                        linear_deflection=linear_value,
                                        angular_deflection=angular_value)
         except Exception as e:
-            show_message("Erreur", f"❌ Erreur lors de la génération du STL : {e}")
+            show_message(tr("error_title"), f"{tr('error_generate_stl')} {e}")
 
     # Injection géométrie si ancien 3MF
     if os.path.exists(old_3mf):
         geom_entry = find_geom_file_in_3mf(fc_3mf)
         if not geom_entry:
-            show_message("Erreur", "❌ Aucun fichier de géométrie détecté dans le 3MF exporté.")
+            show_message(tr("error_title"), tr("error_no_geom"))
             return
         with zipfile.ZipFile(fc_3mf, 'r') as fc_zip:
             geom_data = fc_zip.read(geom_entry)
@@ -645,7 +690,7 @@ def export_replace_geometry():
                     else:
                         new_zip.writestr(item, data)
         except Exception as e:
-            show_message("Erreur", f"❌ Erreur lors de la création du 3MF final : {e}")
+            show_message(tr("error_title"), f"{tr('error_create_3mf')} {e}")
             return
 
         # Remplacement du fichier final
@@ -657,7 +702,7 @@ def export_replace_geometry():
         try:
             shutil.move(tmp_new, fc_3mf)
         except Exception as e:
-            show_message("Erreur", f"❌ Impossible de remplacer le 3MF : {e}")
+            show_message(tr("error_title"), f"{tr('error_replace_3mf')} {e}")
             return
         try:
             if os.path.exists(old_3mf):
@@ -670,28 +715,27 @@ def export_replace_geometry():
             try:
                 subprocess.Popen([slicer_path, fc_3mf])
             except Exception as e:
-                show_message("Erreur", f"❌ Erreur lors du lancement du slicer : {e}")
+                show_message(tr("error_title"), f"{tr('error_launch_slicer')} {e}")
         else:
             if not launch_slicer:
-                show_message("Info", tr("info_done"))
+                show_message(tr("info_title"), tr("info_done"))
         # Sauvegarde du chemin du slicer
         if slicer_path and os.path.exists(slicer_path):
             try:
-                save_settings(slicer_path=slicer_path)
-            except Exception:
-                pass
+                save_settings(linear=linear_value, angular_rad=angular_value, slicer_path=slicer_path)
+            except Exception as e:
+                save_settings(linear=linear_value, angular_rad=angular_value, slicer_path=slicer_path)
+     
     else:
         print("✅ Fichier généré uniquement par FreeCAD :", fc_3mf)
         if launch_slicer and slicer_path and os.path.exists(slicer_path):
             try:
                 subprocess.Popen([slicer_path, fc_3mf])
             except Exception as e:
-                show_message("Erreur", f"❌ Erreur lors du lancement du slicer : {e}")
+                show_message(tr("error_title"), f"{tr('error_launch_slicer')} {e}")
         else:
             if not launch_slicer:
-                show_message("Info", tr("info_done"))
-
-
+                show_message(tr("info_title"), tr("info_done"))
 
     # Exécution des commandes externes
     for checked, cmd, delay in extra_cmds:
@@ -701,7 +745,7 @@ def export_replace_geometry():
                     time.sleep(delay)
                 subprocess.Popen(cmd)
             except Exception as e:
-                show_message("Erreur", f"❌ Impossible d'exécuter la commande externe : {e}")
+                show_message(tr("error_title"), f"{tr('error_external_cmd')} {e}")
 
 # Lancement automatique
 if __name__ == "__main__":
