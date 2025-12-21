@@ -781,8 +781,161 @@ def clean_rels_keep_first(src_3mf, dst_3mf):
     print("   Fichiers supprimés :", to_delete)
     print("   Fichier nettoyé :", dst_3mf)
 
+def clean_qidi_style(src_3mf, dst_3mf):
+    """
+    Nettoyage QidiStudio (wrapper simple autour de clean_rels_keep_first).
+    """
+    clean_rels_keep_first(src_3mf, dst_3mf)
 
 
+def is_qidi(zin):
+    return "3D/_rels/3dmodel.model.rels" in zin.namelist()
+
+def is_slic3r_style(zin):
+    return "Metadata/Slic3r_PE_model.config" in zin.namelist()
+    
+def clean_slic3r_config(xml_bytes):
+    root = ET.fromstring(xml_bytes.decode("utf-8"))
+    objects = root.findall("object")
+
+    if len(objects) > 1:
+        keep = objects[0]
+        for obj in objects[1:]:
+            root.remove(obj)
+
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+def clean_slic3r_3dmodel(xml_bytes):
+    ns = {"m": "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"}
+    root = ET.fromstring(xml_bytes.decode("utf-8"))
+
+    resources = root.find("m:resources", ns)
+    build = root.find("m:build", ns)
+
+    objects = resources.findall("m:object", ns)
+    items = build.findall("m:item", ns)
+
+    if len(objects) > 1:
+        keep_id = objects[0].attrib["id"]
+
+        for obj in objects[1:]:
+            resources.remove(obj)
+
+        for item in items:
+            if item.attrib.get("objectid") != keep_id:
+                build.remove(item)
+
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+
+def clean_slic3r_style(src_3mf, dst_3mf):
+    with zipfile.ZipFile(src_3mf, "r") as zin, \
+         zipfile.ZipFile(dst_3mf, "w", compression=zipfile.ZIP_STORED) as zout:
+
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+
+            if item.filename == "Metadata/Slic3r_PE_model.config":
+                data = clean_slic3r_config(data)
+
+            elif item.filename == "3D/3dmodel.model":
+                data = clean_slic3r_3dmodel(data)
+
+            elif item.filename.startswith("3D/Objects/") and item.filename.endswith(".model"):
+                if not item.filename.endswith("object_1.model"):
+                    continue
+
+            zout.writestr(item.filename, data)
+
+
+def inject_geometry_and_rebuild(fc_3mf, cleaned_old, keep_params, keep_positions):
+    geom_entry = find_geom_file_in_3mf(fc_3mf)
+    if not geom_entry:
+        raise ValueError("Aucun fichier de géométrie trouvé dans le 3MF FreeCAD")
+
+    with zipfile.ZipFile(fc_3mf, "r") as zfc:
+        geom_data = zfc.read(geom_entry)
+
+    geom_data_centered, zmax = recenter_vertices(geom_data)
+
+    tmp_new = cleaned_old + ".new"
+
+    with zipfile.ZipFile(cleaned_old, "r") as zin, \
+         zipfile.ZipFile(tmp_new, "w", compression=zipfile.ZIP_STORED) as zout:
+
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+
+            if item.filename.startswith("3D/Objects/") and item.filename.endswith(".model"):
+                zout.writestr(item.filename, geom_data_centered)
+                continue
+
+            if item.filename.endswith("3D/3dmodel.model"):
+                if keep_positions:
+                    data = force_zmax_in_transform(data, zmax)
+                else:
+                    data = reset_item_transform(data)
+                zout.writestr(item.filename, data)
+                continue
+
+            if not keep_params and item.filename.startswith("Metadata/"):
+                continue
+
+            zout.writestr(item.filename, data)
+
+    shutil.move(tmp_new, fc_3mf)
+
+def clean_freecad_first_export(src_3mf, dst_3mf):
+    """
+    Nettoyage minimal du premier export FreeCAD :
+    - copie directe
+    - supprime les objets vides éventuels
+    - force le mono-objet dans 3dmodel.model
+    - ne modifie pas la structure globale
+    """
+    shutil.copy(src_3mf, dst_3mf)
+
+    model_path = "3D/3dmodel.model"
+
+    tmp = dst_3mf + ".tmp"
+
+    with zipfile.ZipFile(dst_3mf, "r") as zin, \
+         zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_STORED) as zout:
+
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+
+            # Nettoyage du 3dmodel.model FreeCAD
+            if item.filename == model_path:
+                try:
+                    ns = {"m": "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"}
+                    root = ET.fromstring(data.decode("utf-8"))
+
+                    resources = root.find("m:resources", ns)
+                    build = root.find("m:build", ns)
+
+                    objects = resources.findall("m:object", ns)
+                    items = build.findall("m:item", ns)
+
+                    # Si FreeCAD a généré plusieurs objets, on garde le premier
+                    if len(objects) > 1:
+                        keep_id = objects[0].attrib["id"]
+
+                        for obj in objects[1:]:
+                            resources.remove(obj)
+
+                        for it in items:
+                            if it.attrib.get("objectid") != keep_id:
+                                build.remove(it)
+
+                        data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+                except Exception as e:
+                    print("⚠️ Nettoyage FreeCAD minimal impossible :", e)
+
+            zout.writestr(item.filename, data)
+
+    shutil.move(tmp, dst_3mf)
 
 
 # -------------------------
@@ -790,209 +943,107 @@ def clean_rels_keep_first(src_3mf, dst_3mf):
 # -------------------------
 # Routine principale : exporte la sélection en 3MF/STL, injecte géométrie, 
 # lance slicer et commandes externes
-
     
-def export_replace_geometry():
-    cfg = load_config()
+def export_replace_geometry(fc_3mf, old_3mf, keep_params, keep_positions):
+    """
+    Version propre et scindée :
+    - Premier lancement : nettoyage FreeCAD minimal
+    - Lancements suivants : nettoyage slicer (Qidi ou Prusa-family)
+    - Injection géométrie
+    """
+
+    # Premier lancement : pas de 3MF slicer
+    if not os.path.exists(old_3mf):
+        print("ℹ️ Premier export : aucun fichier 3MF existant détecté.")
+        print("   → Le fichier provient directement de FreeCAD.")
+        print("   → Aucun paramètre d'impression n'est encore présent.")
+        print("   → Vous devrez régler les paramètres dans le slicer lors de ce premier lancement.\n")
+
+        cleaned = fc_3mf + ".cleaned"
+        clean_freecad_first_export(fc_3mf, cleaned)
+        shutil.move(cleaned, fc_3mf)
+        return
+
+    # Lancement suivant : un 3MF slicer existe
+    cleaned_old = old_3mf + ".cleaned"
+
+    with zipfile.ZipFile(old_3mf, "r") as zin:
+        if is_qidi(zin):
+            print("ℹ️ Ancien 3MF détecté : format QidiStudio → nettoyage Qidi.")
+            clean_qidi_style(old_3mf, cleaned_old)
+        elif is_slic3r_style(zin):
+            print("ℹ️ Ancien 3MF détecté : format Prusa/Slic3r/Orca → nettoyage Slic3r-style.")
+            clean_slic3r_style(old_3mf, cleaned_old)
+        else:
+            print("ℹ️ Ancien 3MF détecté : format inconnu → copie directe.")
+            shutil.copy(old_3mf, cleaned_old)
+
+    # Injection géométrie FreeCAD
+    print("ℹ️ Injection de la nouvelle géométrie FreeCAD dans le 3MF…")
+    inject_geometry_and_rebuild(fc_3mf, cleaned_old, keep_params, keep_positions)
+    print("✅ Injection terminée.\n")
+
+    # ✅ Nettoyage du fichier temporaire .cleaned
+    if os.path.exists(cleaned_old):
+        os.remove(cleaned_old)
+
+# -------------------------
+# Appel depuis FreeCAD
+# -------------------------
+
+# -------------------------
+# Appel depuis FreeCAD
+# -------------------------
+def main():
     doc = FreeCAD.ActiveDocument
     if not doc:
         show_message(tr("error_title"), tr("error_no_doc"))
         return
 
-    fcstd_path = doc.FileName
-    if not fcstd_path:
-        show_message(tr("error_title"), tr("error_no_save"))
-        return
-
-    base_name = os.path.splitext(fcstd_path)[0]
-    fc_3mf = base_name + ".3mf"
-    old_3mf = base_name + ".old.3mf"
-
-    # Sauvegarde de l'ancien 3MF si présent
-    if os.path.exists(fc_3mf):
-        try:
-            shutil.move(fc_3mf, old_3mf)
-        except Exception:
-            pass
-
-    # Vérification de la sélection
-    selection = FreeCADGui.Selection.getSelection()
-    selection = [obj for obj in selection if hasattr(obj, "Shape") and obj.Shape is not None]
-
-    if not selection:
+    sel = FreeCADGui.Selection.getSelection()
+    if not sel:
         show_message(tr("warn_title"), tr("warn_no_selection"))
         return
-    if len(selection) > 1:
-        show_message(tr("warn_title"), tr("warn_multi_selection"))
+
+    # Récupération config utilisateur
+    cfg = load_config()
+
+    # Demande options à l’utilisateur
+    keep_params, keep_positions, gen_stl, slicer_path, launch_slicer, lin_def, ang_def, extra_cmds = \
+        ask_user_options(cfg["slicer_exe"], cfg["linear_deflection"], cfg["angular_deflection"])
+
+    if keep_params is None:
+        show_message(tr("info_title"), tr("info_cancel"))
         return
 
-    # Chargement des préférences
-    slicer_path_pref = cfg.get("slicer_exe", DEFAULT_SLICER_EXE)
-    linear_pref = cfg.get("linear_deflection", DEFAULT_LINEAR_DEFLECTION)
-    angular_pref = cfg.get("angular_deflection", DEFAULT_ANGULAR_DEFLECTION)
+    # Sauvegarde config
+    save_settings(lin_def, ang_def, slicer_path)
 
-    # 🔎 Boucle de dialogue avec contrôle du chemin slicer
-    while True:
-        keep_params, keep_positions, generate_stl, slicer_path, launch_slicer, linear_value, angular_value, extra_cmds = \
-            ask_user_options(slicer_path_pref, linear_pref, angular_pref)
+    base_dir = os.path.dirname(doc.FileName)
 
-        # Si l’utilisateur annule → sortie
-        if slicer_path is None and launch_slicer is None:
-            show_message(tr("info_title"), tr("info_cancel"))
-            if os.path.exists(old_3mf) and not os.path.exists(fc_3mf):
-                try:
-                    shutil.move(old_3mf, fc_3mf)
-                except Exception:
-                    pass
-            return
+    # Fichier final basé sur le nom du projet
+    final_3mf = doc.FileName.replace(".FCStd", ".3mf")
 
-        # ⚠️ Vérification du chemin slicer uniquement si lancement demandé
-        if launch_slicer and slicer_path and not os.path.exists(slicer_path):
-            show_message(tr("error_title"), f"{tr('error_invalid_slicer')}\n{slicer_path}")
-            # → on reboucle pour redemander les options
-            continue
+    # Fichier temporaire FreeCAD
+    fc_3mf = os.path.join(base_dir, "export_fc.3mf")
 
-        # ✅ Si on arrive ici, le chemin est valide ou le lancement du slicer est décoché
-        break
+    # Export FreeCAD → 3MF temporaire
+    export_selection_with_deflection(sel, fc_3mf, lin_def, ang_def)
 
-    # Sauvegarde des paramètres choisis
-    save_settings(linear=linear_value, angular_rad=angular_value, slicer_path=slicer_path)
-    print("⚙️ Paramètres sauvegardés, on continue l’export…")
-   
-    
-    # Export initial FreeCAD → 3MF
-    try:
-        export_selection_with_deflection(selection, fc_3mf,
-                                         linear_deflection=linear_value,
-                                         angular_deflection=angular_value)
-    except Exception as e:
-        show_message(tr("error_title"), f"{tr('error_export_3mf')} {e}")
-        if os.path.exists(old_3mf) and not os.path.exists(fc_3mf):
-            try:
-                shutil.move(old_3mf, fc_3mf)
-            except Exception:
-                pass
-        return
+    # Injection + nettoyage (final_3mf = ancien 3MF)
+    export_replace_geometry(fc_3mf, final_3mf, keep_params, keep_positions)
 
-    # Génération STL si demandé
-    if generate_stl:
-        stl_path = base_name + ".stl"
-        try:
-            export_stl_with_deflection(selection, stl_path,
-                                       linear_deflection=linear_value,
-                                       angular_deflection=angular_value)
-        except Exception as e:
-            show_message(tr("error_title"), f"{tr('error_generate_stl')} {e}")
+    # Remplace le fichier final
+    shutil.copy(fc_3mf, final_3mf)
 
-    # Injection géométrie si ancien 3MF
-    if os.path.exists(old_3mf):
+    # Nettoyage du temporaire
+    if os.path.exists(fc_3mf):
+        os.remove(fc_3mf)
 
-        # ✅ Étape préalable : nettoyer l'ancien 3MF pour ne garder qu'un seul objet
-        cleaned_old_3mf = base_name + ".cleaned.3mf"
-        try:
-            clean_rels_keep_first(old_3mf, cleaned_old_3mf)
-            old_3mf = cleaned_old_3mf
-        except Exception as e:
-            print("⚠️ Nettoyage 3MF ancien échoué, on continue quand même :", e)
-
-        # ✅ Trouver la géométrie exportée par FreeCAD
-        geom_entry = find_geom_file_in_3mf(fc_3mf)
-        if not geom_entry:
-            show_message(tr("error_title"), tr("error_no_geom"))
-            return
-
-        with zipfile.ZipFile(fc_3mf, 'r') as fc_zip:
-            geom_data = fc_zip.read(geom_entry)
-
-        # 🔎 Étape clé : recentrage XY et calcul du Zmax
-        geom_data_centered, zmax = recenter_vertices(geom_data)
+    # Lance le slicer si demandé
+    if launch_slicer and os.path.exists(slicer_path):
+        subprocess.Popen([slicer_path, final_3mf])
 
 
-        tmp_new = base_name + ".new.3mf"
-
-        try:
-            with zipfile.ZipFile(old_3mf, 'r') as old_zip, zipfile.ZipFile(tmp_new, 'w') as new_zip:
-                for item in old_zip.infolist():
-                    data = old_zip.read(item.filename)
-
-                    # Injection de la géométrie recentrée
-                    if item.filename.startswith("3D/Objects/") and item.filename.endswith(".model"):
-                        new_zip.writestr(item.filename, geom_data_centered)
-
-                    # Ajustement du transform
-                    elif item.filename.endswith("3dmodel.model"):
-                        if keep_positions:
-                            # ⚠️ On conserve X/Y existants mais on force Z = zmax
-                            data = force_zmax_in_transform(data, zmax)
-                        else:
-                            # ⚠️ On recalcule complètement X/Y/Z
-                            data = reset_item_transform(data, center=(CENTER_X, CENTER_Y, zmax))
-                        new_zip.writestr(item.filename, data)
-
-                    # Suppression éventuelle des Metadata si demandé
-                    elif not keep_params and item.filename.startswith("Metadata/"):
-                        continue
-
-                    else:
-                        new_zip.writestr(item, data)
-        except Exception as e:
-            show_message(tr("error_title"), f"{tr('error_create_3mf')} {e}")
-            return
-
-        # Remplacement du fichier final
-        try:
-            if os.path.exists(fc_3mf):
-                os.remove(fc_3mf)
-        except Exception:
-            pass
-        try:
-            shutil.move(tmp_new, fc_3mf)
-        except Exception as e:
-            show_message(tr("error_title"), f"{tr('error_replace_3mf')} {e}")
-            return
-        try:
-            if os.path.exists(old_3mf):
-                os.remove(old_3mf)
-        except Exception:
-            pass
-        print("✅ Export avec récupération des paramètres du slicer :", fc_3mf)
-        # Lancement du slicer si demandé
-        if launch_slicer and slicer_path and os.path.exists(slicer_path):
-            try:
-                subprocess.Popen([slicer_path, fc_3mf])
-            except Exception as e:
-                show_message(tr("error_title"), f"{tr('error_launch_slicer')} {e}")
-        else:
-            if not launch_slicer:
-                show_message(tr("info_title"), tr("info_done"))
-        # Sauvegarde du chemin du slicer
-        if slicer_path and os.path.exists(slicer_path):
-            try:
-                save_settings(linear=linear_value, angular_rad=angular_value, slicer_path=slicer_path)
-            except Exception as e:
-                save_settings(linear=linear_value, angular_rad=angular_value, slicer_path=slicer_path)
-     
-    else:
-        print("✅ Fichier généré uniquement par FreeCAD :", fc_3mf)
-        if launch_slicer and slicer_path and os.path.exists(slicer_path):
-            try:
-                subprocess.Popen([slicer_path, fc_3mf])
-            except Exception as e:
-                show_message(tr("error_title"), f"{tr('error_launch_slicer')} {e}")
-        else:
-            if not launch_slicer:
-                show_message(tr("info_title"), tr("info_done"))
-
-    # Exécution des commandes externes
-    for checked, cmd, delay in extra_cmds:
-        if checked:
-            try:
-                if delay > 0:
-                    time.sleep(delay)
-                subprocess.Popen(cmd)
-            except Exception as e:
-                show_message(tr("error_title"), f"{tr('error_external_cmd')} {e}")
-
-# Lancement automatique
-if __name__ == "__main__":
-    export_replace_geometry()
+# Lancement
+main()
