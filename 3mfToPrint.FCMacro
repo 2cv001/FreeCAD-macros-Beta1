@@ -412,6 +412,32 @@ def ask_user_options(current_slicer, current_linear, current_angular):
 # -------------------------
 # Fonctions de traitement 3MF / mesh
 # -------------------------
+
+def is_slic3r_style(zip):
+    # Prusa / Orca / Bambu / SuperSlicer
+    return any(n.startswith("3D/Objects/") for n in zip.namelist())
+
+
+def is_qidistudio(zip):
+    # Ancien slicer Qidi (multi-objets)
+    names = zip.namelist()
+    return (
+        "3D/_rels/3dmodel.model.rels" in names and
+        "Metadata/model_settings.config" in names
+    )
+
+
+def is_qidislicer(zip):
+    # Slicer moderne Qidi (Cura-like)
+    names = zip.namelist()
+    return (
+        "3D/3dmodel.model" in names and
+        not any(n.startswith("3D/Objects/") for n in names) and
+        "3D/_rels/3dmodel.model.rels" not in names
+    )
+
+
+
 # Recherche le fichier de géométrie principal dans une archive 3MF
 def find_geom_file_in_3mf(zip_path):
     with zipfile.ZipFile(zip_path, 'r') as z:
@@ -552,6 +578,44 @@ def recenter_vertices(model_data):
         print("⚠️ Erreur recentrage vertex :", e)
         return model_data, CENTER_Z
 
+def clean_qidi_style(src_3mf, dst_3mf):
+    """
+    Nettoie un 3MF QidiSlicer :
+    - Conserve absolument le fichier 3D/_rels/3dmodel.model.rels
+    - Copie tous les autres fichiers inchangés
+    - Ne supprime rien de critique
+    """
+
+    with zipfile.ZipFile(src_3mf, "r") as zin, \
+         zipfile.ZipFile(dst_3mf, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+
+        # Flag pour savoir si le fichier rels est présent
+        rels_present = False
+
+        for item in zin.infolist():
+            name = item.filename
+            data = zin.read(name)
+
+            # Conserver absolument le fichier de relations
+            if name == "3D/_rels/3dmodel.model.rels":
+                rels_present = True
+                zout.writestr(name, data)
+                continue
+
+            # Copie inchangée des autres fichiers
+            zout.writestr(name, data)
+
+        # Si le fichier rels est absent → on le recrée minimal
+        if not rels_present:
+            minimal_rels = """<?xml version='1.0' encoding='UTF-8'?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+ <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel" />
+</Relationships>
+"""
+            zout.writestr("3D/_rels/3dmodel.model.rels", minimal_rels)
+
+    print("✅ Nettoyage Qidi terminé, rels garanti présent :", dst_3mf)
+
 
 
 def clean_rels_keep_first(src_3mf, dst_3mf):
@@ -572,16 +636,24 @@ def clean_rels_keep_first(src_3mf, dst_3mf):
        - conserve toute la structure intacte
     """
 
+    # Chemins internes des fichiers à nettoyer
     rels_path = "3D/_rels/3dmodel.model.rels"
     config_path = "Metadata/model_settings.config"
     model_path = "3D/3dmodel.model"
 
+    # Ouverture du 3MF source
     with zipfile.ZipFile(src_3mf, "r") as zin:
 
-        # 1) Nettoyage du .rels
+        # ------------------------------------------------------------
+        # 1) NETTOYAGE DU FICHIER .rels
+        # ------------------------------------------------------------
+        # Ce fichier liste les fichiers .model associés au 3MF.
+        # Qidi en met plusieurs, mais un seul est réellement utilisé.
+        # On garde uniquement la première <Relationship>.
         rels_xml = zin.read(rels_path).decode("utf-8")
         lines = rels_xml.splitlines()
 
+        # Extraction de toutes les lignes contenant une <Relationship>
         relationship_lines = [
             line for line in lines
             if "<Relationship" in line and "Target=" in line
@@ -590,10 +662,13 @@ def clean_rels_keep_first(src_3mf, dst_3mf):
         if not relationship_lines:
             raise ValueError("Aucune balise <Relationship> trouvée dans le fichier .rels")
 
+        # La première Relationship est celle qu’on garde
         first_rel = relationship_lines[0]
 
+        # Liste des fichiers .model à supprimer (toutes les autres Relationship)
         to_delete = []
         for rel in relationship_lines[1:]:
+            # Extraction du chemin Target="..."
             start = rel.find('Target="') + len('Target="')
             end = rel.find('"', start)
             target = rel[start:end]
@@ -601,10 +676,12 @@ def clean_rels_keep_first(src_3mf, dst_3mf):
                 target = target[1:]
             to_delete.append(target)
 
+        # Reconstruction du .rels avec uniquement la première Relationship
         new_rels = []
         first_kept = False
         for line in lines:
             if "<Relationship" in line and "Target=" in line:
+                # On garde uniquement la première occurrence
                 if not first_kept and line == first_rel:
                     new_rels.append(line)
                     first_kept = True
@@ -613,15 +690,21 @@ def clean_rels_keep_first(src_3mf, dst_3mf):
 
         new_rels_xml = "\n".join(new_rels)
 
-        # 2) Identifier le fichier .model à garder
+        # ------------------------------------------------------------
+        # 2) IDENTIFIER LE FICHIER .model À GARDER
+        # ------------------------------------------------------------
+        # On extrait le Target de la première Relationship
         start = first_rel.find('Target="') + len('Target="')
         end = first_rel.find('"', start)
-        target = first_rel[start:end]               # ex : "/3D/Objects/object_1.model"
+        target = first_rel[start:end]  # ex : "/3D/Objects/object_1.model"
         if target.startswith("/"):
             target = target[1:]
         model_target = target
 
-        # 3) Trouver l'ID logique dans 3dmodel.model
+        # ------------------------------------------------------------
+        # 3) TROUVER L’ID LOGIQUE DE L’OBJET DANS 3dmodel.model
+        # ------------------------------------------------------------
+        # On cherche quel <object id="..."> correspond au fichier .model retenu.
         model_xml = zin.read(model_path).decode("utf-8")
         lines_model = model_xml.splitlines()
 
@@ -631,11 +714,14 @@ def clean_rels_keep_first(src_3mf, dst_3mf):
         for line in lines_model:
             stripped = line.strip()
 
+            # Détection d’un bloc <object id="X">
             if stripped.startswith("<object "):
                 o_start = stripped.find('id="') + len('id="')
                 o_end = stripped.find('"', o_start)
                 current_object_id = stripped[o_start:o_end]
 
+            # Détection d’un <component p:path="...">
+            # C’est ici qu’on associe un object_id à un fichier .model
             if stripped.startswith("<component ") and 'p:path="' in stripped:
                 p_start = stripped.find('p:path="') + len('p:path="')
                 p_end = stripped.find('"', p_start)
@@ -649,12 +735,18 @@ def clean_rels_keep_first(src_3mf, dst_3mf):
         if keep_object_id is None:
             raise ValueError(f"Impossible de trouver l'objet correspondant à {model_target}")
 
-        # 4) Nettoyage de 3dmodel.model
+        # ------------------------------------------------------------
+        # 4) NETTOYAGE DE 3dmodel.model
+        # ------------------------------------------------------------
+        # On garde uniquement :
+        # - le <object id="keep_object_id">
+        # - le <item objectid="keep_object_id">
         new_model = []
         inside_object = False
         current_block = []
 
         def flush_object_block(block):
+            # Ajoute le bloc <object> uniquement si c’est le bon
             text = "\n".join(block)
             if f'id="{keep_object_id}"' in text:
                 new_model.extend(block)
@@ -662,11 +754,13 @@ def clean_rels_keep_first(src_3mf, dst_3mf):
         for line in lines_model:
             stripped = line.strip()
 
+            # Début d’un bloc <object>
             if stripped.startswith("<object"):
                 inside_object = True
                 current_block = [line]
                 continue
 
+            # Fin d’un bloc </object>
             if stripped.startswith("</object>"):
                 if inside_object:
                     current_block.append(line)
@@ -675,20 +769,29 @@ def clean_rels_keep_first(src_3mf, dst_3mf):
                     current_block = []
                     continue
 
+            # Ligne interne à un bloc <object>
             if inside_object:
                 current_block.append(line)
                 continue
 
+            # On garde uniquement le <item> correspondant à l’objet
             if stripped.startswith("<item"):
                 if f'objectid="{keep_object_id}"' in stripped:
                     new_model.append(line)
                 continue
 
+            # Toutes les autres lignes sont recopiées
             new_model.append(line)
 
         new_model_xml = "\n".join(new_model)
 
-        # 5) Nettoyage de model_settings.config
+        # ------------------------------------------------------------
+        # 5) NETTOYAGE DE model_settings.config
+        # ------------------------------------------------------------
+        # On garde uniquement :
+        # - <object id="keep_object_id">
+        # - <model_instance> lié à cet objet
+        # - <assemble_item object_id="keep_object_id">
         config_xml = zin.read(config_path).decode("utf-8")
         lines = config_xml.splitlines()
 
@@ -711,6 +814,7 @@ def clean_rels_keep_first(src_3mf, dst_3mf):
         for line in lines:
             stripped = line.strip()
 
+            # Bloc <object>
             if stripped.startswith("<object "):
                 inside_object = True
                 current_block = [line]
@@ -728,6 +832,7 @@ def clean_rels_keep_first(src_3mf, dst_3mf):
                 current_block.append(line)
                 continue
 
+            # Bloc <model_instance>
             if stripped.startswith("<model_instance>"):
                 inside_instance = True
                 current_block = [line]
@@ -745,35 +850,44 @@ def clean_rels_keep_first(src_3mf, dst_3mf):
                 current_block.append(line)
                 continue
 
+            # Ligne <assemble_item> : on garde uniquement celle de l’objet
             if stripped.startswith("<assemble_item"):
                 if f'object_id="{keep_object_id}"' in stripped:
                     new_config.append(line)
                 continue
 
+            # Toutes les autres lignes sont recopiées
             new_config.append(line)
 
         new_config_xml = "\n".join(new_config)
 
-        # 6) Réécriture du ZIP nettoyé
+        # ------------------------------------------------------------
+        # 6) RÉÉCRITURE DU ZIP NETTOYÉ
+        # ------------------------------------------------------------
         with zipfile.ZipFile(dst_3mf, "w", compression=zipfile.ZIP_STORED) as zout:
             for item in zin.infolist():
                 name = item.filename
 
+                # Suppression des fichiers .model inutiles
                 if name in to_delete:
                     continue
 
+                # Remplacement du .rels nettoyé
                 if name == rels_path:
                     zout.writestr(name, new_rels_xml)
                     continue
 
+                # Remplacement du 3dmodel.model nettoyé
                 if name == model_path:
                     zout.writestr(name, new_model_xml)
                     continue
 
+                # Remplacement du model_settings.config nettoyé
                 if name == config_path:
                     zout.writestr(name, new_config_xml)
                     continue
 
+                # Copie des autres fichiers inchangés
                 zout.writestr(name, zin.read(name))
 
     print("✅ Nettoyage 3MF terminé.")
@@ -782,7 +896,176 @@ def clean_rels_keep_first(src_3mf, dst_3mf):
     print("   Fichier nettoyé :", dst_3mf)
 
 
+def clean_slic3r_style(src_3mf, dst_3mf):
+    """
+    Nettoie un 3MF Orca/Prusa/SuperSlicer :
+    - Garde uniquement le premier objet dans 3D/Objects/
+    - Supprime les autres .model
+    - Nettoie 3D/3dmodel.model pour ne garder que l'objet et l'item correspondant
+    - Conserve les Metadata intacts
+    """
 
+    with zipfile.ZipFile(src_3mf, "r") as zin:
+        # Liste des fichiers objets
+        object_models = [n for n in zin.namelist() if n.startswith("3D/Objects/") and n.endswith(".model")]
+
+        if not object_models:
+            raise ValueError("Aucun objet trouvé dans 3D/Objects/")
+
+        # On garde uniquement le premier
+        keep_model = object_models[0]
+        to_delete = object_models[1:]
+
+        # Lecture du 3dmodel.model
+        model_xml = zin.read("3D/3dmodel.model").decode("utf-8")
+        lines_model = model_xml.splitlines()
+
+        keep_object_id = None
+        current_object_id = None
+        new_model_lines = []
+        inside_object = False
+        current_block = []
+
+        def flush_object_block(block):
+            text = "\n".join(block)
+            if f'p:path="/{keep_model}"' in text:
+                nonlocal keep_object_id
+                # Extraire l'id de l'objet
+                m = re.search(r'id="(\d+)"', text)
+                if m:
+                    keep_object_id = m.group(1)
+                new_model_lines.extend(block)
+
+        for line in lines_model:
+            stripped = line.strip()
+
+            if stripped.startswith("<object "):
+                inside_object = True
+                current_block = [line]
+                continue
+
+            if stripped.startswith("</object>"):
+                if inside_object:
+                    current_block.append(line)
+                    flush_object_block(current_block)
+                    inside_object = False
+                    current_block = []
+                    continue
+
+            if inside_object:
+                current_block.append(line)
+                continue
+
+            # Garder uniquement l’item correspondant
+            if stripped.startswith("<item") and keep_object_id and f'objectid="{keep_object_id}"' in stripped:
+                new_model_lines.append(line)
+                continue
+
+            # Recopie des autres lignes
+            new_model_lines.append(line)
+
+        new_model_xml = "\n".join(new_model_lines)
+
+        # Réécriture du ZIP nettoyé
+        with zipfile.ZipFile(dst_3mf, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                name = item.filename
+
+                if name in to_delete:
+                    continue
+
+                if name == "3D/3dmodel.model":
+                    zout.writestr(name, new_model_xml)
+                    continue
+
+                # Copie inchangée des autres fichiers
+                zout.writestr(name, zin.read(name))
+
+    print("✅ Nettoyage 3MF Orca/Prusa terminé.")
+    print("   Objet conservé :", keep_model)
+    print("   Fichiers supprimés :", to_delete)
+    print("   Fichier nettoyé :", dst_3mf)
+
+
+
+
+def replace_mesh_in_model_xml(old_model_xml_bytes, new_model_xml_bytes):
+    """
+    Remplace uniquement le <mesh> dans le modèle Qidi.
+    Conserve :
+      - le root <model> d'origine
+      - les namespaces (dont slic3rpe)
+      - les métadonnées (dont Application=QIDISlicer-1.2.5)
+      - les <resources>, <build>, <item>, transforms, etc.
+
+    old_model_xml_bytes : contenu du 3dmodel.model Qidi
+    new_model_xml_bytes : contenu du 3dmodel.model FreeCAD recentré
+    """
+
+    # Décodage robuste
+    old_text = old_model_xml_bytes.decode("utf-8", errors="replace")
+    new_text = new_model_xml_bytes.decode("utf-8", errors="replace")
+
+    # Parsing XML
+    old_root = ET.fromstring(old_text)
+    new_root = ET.fromstring(new_text)
+
+    # Namespace principal
+    ns_uri = old_root.tag.split("}")[0].strip("{") if "}" in old_root.tag else ""
+    ns = {"m": ns_uri} if ns_uri else {}
+
+    # Trouver les <mesh>
+    old_mesh = old_root.find(".//m:mesh", ns) if ns else old_root.find(".//mesh")
+    new_mesh = new_root.find(".//m:mesh", ns) if ns else new_root.find(".//mesh")
+
+    if old_mesh is None or new_mesh is None:
+        print("⚠️ Impossible de trouver <mesh> dans l'un des fichiers.")
+        return old_model_xml_bytes
+
+    # Remplacer le contenu du <mesh> d'origine
+    for child in list(old_mesh):
+        old_mesh.remove(child)
+    for child in list(new_mesh):
+        old_mesh.append(child)
+
+    # Re-sérialisation
+    xml_bytes = ET.tostring(old_root, encoding="utf-8")
+    xml_decl = b'<?xml version="1.0" encoding="UTF-8"?>\n'
+
+    if not xml_bytes.startswith(b"<?xml"):
+        xml_bytes = xml_decl + xml_bytes
+
+    return xml_bytes
+
+
+
+def inject_geometry_into_qidi_3mf(old_3mf_path, new_3mf_path, new_model_xml_bytes):
+    """
+    Construit un nouveau 3MF Qidi en remplaçant uniquement le <mesh> dans 3D/3dmodel.model.
+    Conserve :
+      - [Content_Types].xml
+      - _rels/.rels
+      - Metadata/*
+      - namespaces
+      - Application=QIDISlicer-1.2.5
+      - transforms
+    """
+
+    with zipfile.ZipFile(old_3mf_path, "r") as zin, \
+         zipfile.ZipFile(new_3mf_path, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+
+        for info in zin.infolist():
+            name = info.filename
+            data = zin.read(name)
+
+            # On remplace uniquement 3D/3dmodel.model
+            if name == "3D/3dmodel.model":
+                merged = replace_mesh_in_model_xml(data, new_model_xml_bytes)
+                zout.writestr(name, merged)
+                continue
+
+            # Tous les autres fichiers sont recopiés tels quels
+            zout.writestr(name, data)
 
 
 # -------------------------
@@ -790,9 +1073,25 @@ def clean_rels_keep_first(src_3mf, dst_3mf):
 # -------------------------
 # Routine principale : exporte la sélection en 3MF/STL, injecte géométrie, 
 # lance slicer et commandes externes
+# -------------------------
 
-    
 def export_replace_geometry():
+    """
+    Routine principale :
+    - Exporte la sélection en 3MF/STL (FreeCAD)
+    - Injecte la géométrie dans un ancien 3MF (si présent)
+      * en conservant la structure OPC, les métadonnées et les namespaces
+      * en remplaçant uniquement la géométrie (<mesh>) pour QidiSlicer
+    - Conserve ou non les paramètres du slicer
+    - Lance le slicer
+    - Exécute les commandes externes
+    """
+
+    print(">>> NOUVELLE EXECUTION DE LA MACRO <<<")
+
+    # ------------------------------------------------------------
+    # 1) Vérifications initiales
+    # ------------------------------------------------------------
     cfg = load_config()
     doc = FreeCAD.ActiveDocument
     if not doc:
@@ -808,16 +1107,15 @@ def export_replace_geometry():
     fc_3mf = base_name + ".3mf"
     old_3mf = base_name + ".old.3mf"
 
-    # Sauvegarde de l'ancien 3MF si présent
+    # Sauvegarde de l'ancien 3MF
     if os.path.exists(fc_3mf):
-        try:
-            shutil.move(fc_3mf, old_3mf)
-        except Exception:
-            pass
+        shutil.move(fc_3mf, old_3mf)
 
     # Vérification de la sélection
-    selection = FreeCADGui.Selection.getSelection()
-    selection = [obj for obj in selection if hasattr(obj, "Shape") and obj.Shape is not None]
+    selection = [
+        obj for obj in FreeCADGui.Selection.getSelection()
+        if hasattr(obj, "Shape") and obj.Shape is not None
+    ]
 
     if not selection:
         show_message(tr("warn_title"), tr("warn_no_selection"))
@@ -826,76 +1124,81 @@ def export_replace_geometry():
         show_message(tr("warn_title"), tr("warn_multi_selection"))
         return
 
-    # Chargement des préférences
+    # ------------------------------------------------------------
+    # 2) Préférences + boîte de dialogue
+    # ------------------------------------------------------------
     slicer_path_pref = cfg.get("slicer_exe", DEFAULT_SLICER_EXE)
     linear_pref = cfg.get("linear_deflection", DEFAULT_LINEAR_DEFLECTION)
     angular_pref = cfg.get("angular_deflection", DEFAULT_ANGULAR_DEFLECTION)
 
-    # 🔎 Boucle de dialogue avec contrôle du chemin slicer
     while True:
-        keep_params, keep_positions, generate_stl, slicer_path, launch_slicer, linear_value, angular_value, extra_cmds = \
-            ask_user_options(slicer_path_pref, linear_pref, angular_pref)
+        (keep_params, keep_positions, generate_stl,
+         slicer_path, launch_slicer,
+         linear_value, angular_value, extra_cmds) = ask_user_options(
+            slicer_path_pref, linear_pref, angular_pref
+        )
 
-        # Si l’utilisateur annule → sortie
         if slicer_path is None and launch_slicer is None:
             show_message(tr("info_title"), tr("info_cancel"))
             if os.path.exists(old_3mf) and not os.path.exists(fc_3mf):
-                try:
-                    shutil.move(old_3mf, fc_3mf)
-                except Exception:
-                    pass
+                shutil.move(old_3mf, fc_3mf)
             return
 
-        # ⚠️ Vérification du chemin slicer uniquement si lancement demandé
         if launch_slicer and slicer_path and not os.path.exists(slicer_path):
             show_message(tr("error_title"), f"{tr('error_invalid_slicer')}\n{slicer_path}")
-            # → on reboucle pour redemander les options
             continue
 
-        # ✅ Si on arrive ici, le chemin est valide ou le lancement du slicer est décoché
         break
 
-    # Sauvegarde des paramètres choisis
     save_settings(linear=linear_value, angular_rad=angular_value, slicer_path=slicer_path)
-    print("⚙️ Paramètres sauvegardés, on continue l’export…")
-   
-    
-    # Export initial FreeCAD → 3MF
+
+    # ------------------------------------------------------------
+    # 3) Export FreeCAD → 3MF
+    # ------------------------------------------------------------
     try:
-        export_selection_with_deflection(selection, fc_3mf,
-                                         linear_deflection=linear_value,
-                                         angular_deflection=angular_value)
+        export_selection_with_deflection(
+            selection, fc_3mf,
+            linear_deflection=linear_value,
+            angular_deflection=angular_value
+        )
     except Exception as e:
         show_message(tr("error_title"), f"{tr('error_export_3mf')} {e}")
         if os.path.exists(old_3mf) and not os.path.exists(fc_3mf):
-            try:
-                shutil.move(old_3mf, fc_3mf)
-            except Exception:
-                pass
+            shutil.move(old_3mf, fc_3mf)
         return
 
-    # Génération STL si demandé
+    # Export STL si demandé
     if generate_stl:
-        stl_path = base_name + ".stl"
         try:
-            export_stl_with_deflection(selection, stl_path,
-                                       linear_deflection=linear_value,
-                                       angular_deflection=angular_value)
+            export_stl_with_deflection(
+                selection, base_name + ".stl",
+                linear_deflection=linear_value,
+                angular_deflection=angular_value
+            )
         except Exception as e:
             show_message(tr("error_title"), f"{tr('error_generate_stl')} {e}")
 
-    # Injection géométrie si ancien 3MF
+    # ------------------------------------------------------------
+    # 4) Injection géométrie si ancien 3MF
+    # ------------------------------------------------------------
     if os.path.exists(old_3mf):
 
-        # ✅ Étape préalable : nettoyer l'ancien 3MF pour ne garder qu'un seul objet
         cleaned_old_3mf = base_name + ".cleaned.3mf"
-        try:
-            clean_rels_keep_first(old_3mf, cleaned_old_3mf)
-            old_3mf = cleaned_old_3mf
-        except Exception as e:
-            print("⚠️ Nettoyage 3MF ancien échoué, on continue quand même :", e)
 
-        # ✅ Trouver la géométrie exportée par FreeCAD
+        # Détection du slicer source
+        with zipfile.ZipFile(old_3mf, "r") as zin:
+            if is_qidistudio(zin):
+                clean_rels_keep_first(old_3mf, cleaned_old_3mf)
+            elif is_slic3r_style(zin):
+                clean_slic3r_style(old_3mf, cleaned_old_3mf)
+            elif is_qidislicer(zin):
+                clean_qidi_style(old_3mf, cleaned_old_3mf)
+            else:
+                shutil.copy(old_3mf, cleaned_old_3mf)
+
+        old_3mf = cleaned_old_3mf
+
+        # Géométrie FreeCAD
         geom_entry = find_geom_file_in_3mf(fc_3mf)
         if not geom_entry:
             show_message(tr("error_title"), tr("error_no_geom"))
@@ -904,86 +1207,90 @@ def export_replace_geometry():
         with zipfile.ZipFile(fc_3mf, 'r') as fc_zip:
             geom_data = fc_zip.read(geom_entry)
 
-        # 🔎 Étape clé : recentrage XY et calcul du Zmax
         geom_data_centered, zmax = recenter_vertices(geom_data)
 
-
+        # Reconstruction → fichier NEUF
         tmp_new = base_name + ".new.3mf"
 
-        try:
-            with zipfile.ZipFile(old_3mf, 'r') as old_zip, zipfile.ZipFile(tmp_new, 'w') as new_zip:
-                for item in old_zip.infolist():
-                    data = old_zip.read(item.filename)
+        with zipfile.ZipFile(old_3mf, 'r') as old_zip, \
+             zipfile.ZipFile(tmp_new, 'w', compression=zipfile.ZIP_DEFLATED) as new_zip:
 
-                    # Injection de la géométrie recentrée
-                    if item.filename.startswith("3D/Objects/") and item.filename.endswith(".model"):
-                        new_zip.writestr(item.filename, geom_data_centered)
+            names = old_zip.namelist()
+            has_objects = any(n.startswith("3D/Objects/") for n in names)
 
-                    # Ajustement du transform
-                    elif item.filename.endswith("3dmodel.model"):
-                        if keep_positions:
-                            # ⚠️ On conserve X/Y existants mais on force Z = zmax
-                            data = force_zmax_in_transform(data, zmax)
-                        else:
-                            # ⚠️ On recalcule complètement X/Y/Z
-                            data = reset_item_transform(data, center=(CENTER_X, CENTER_Y, zmax))
-                        new_zip.writestr(item.filename, data)
+            for item in old_zip.infolist():
+                name = item.filename
+                data = old_zip.read(name)
 
-                    # Suppression éventuelle des Metadata si demandé
-                    elif not keep_params and item.filename.startswith("Metadata/"):
+                # --------------------------------------------------------
+                # CAS A : Multi-objets (Slic3r/Orca/QidiStudio)
+                # --------------------------------------------------------
+                if has_objects:
+
+                    if name.startswith("3D/Objects/") and name.endswith(".model"):
+                        new_zip.writestr(name, geom_data_centered)
                         continue
 
-                    else:
-                        new_zip.writestr(item, data)
-        except Exception as e:
-            show_message(tr("error_title"), f"{tr('error_create_3mf')} {e}")
-            return
+                    if name.endswith("3dmodel.model"):
+                        if keep_positions:
+                            data = force_zmax_in_transform(data, zmax)
+                        else:
+                            data = reset_item_transform(data, center=(CENTER_X, CENTER_Y, zmax))
+                        new_zip.writestr(name, data)
+                        continue
 
-        # Remplacement du fichier final
-        try:
-            if os.path.exists(fc_3mf):
-                os.remove(fc_3mf)
-        except Exception:
-            pass
-        try:
-            shutil.move(tmp_new, fc_3mf)
-        except Exception as e:
-            show_message(tr("error_title"), f"{tr('error_replace_3mf')} {e}")
-            return
-        try:
-            if os.path.exists(old_3mf):
-                os.remove(old_3mf)
-        except Exception:
-            pass
+                    if not keep_params and name.startswith("Metadata/"):
+                        continue
+
+                    new_zip.writestr(name, data)
+                    continue
+
+                # --------------------------------------------------------
+                # CAS B : QidiSlicer mono-objet
+                # --------------------------------------------------------
+                else:
+                    # On ferme le ZIP en cours car on délègue toute la reconstruction
+                    new_zip.close()
+
+                    # Reconstruction complète du 3MF Qidi
+                    inject_geometry_into_qidi_3mf(old_3mf, tmp_new, geom_data_centered)
+
+                    # On sort de la boucle
+                    break
+
+        # Remplacement final
+        if os.path.exists(fc_3mf):
+            os.remove(fc_3mf)
+        shutil.move(tmp_new, fc_3mf)
+        if os.path.exists(old_3mf):
+            os.remove(old_3mf)
+
         print("✅ Export avec récupération des paramètres du slicer :", fc_3mf)
-        # Lancement du slicer si demandé
-        if launch_slicer and slicer_path and os.path.exists(slicer_path):
-            try:
-                subprocess.Popen([slicer_path, fc_3mf])
-            except Exception as e:
-                show_message(tr("error_title"), f"{tr('error_launch_slicer')} {e}")
-        else:
-            if not launch_slicer:
-                show_message(tr("info_title"), tr("info_done"))
-        # Sauvegarde du chemin du slicer
-        if slicer_path and os.path.exists(slicer_path):
-            try:
-                save_settings(linear=linear_value, angular_rad=angular_value, slicer_path=slicer_path)
-            except Exception as e:
-                save_settings(linear=linear_value, angular_rad=angular_value, slicer_path=slicer_path)
-     
+
     else:
         print("✅ Fichier généré uniquement par FreeCAD :", fc_3mf)
-        if launch_slicer and slicer_path and os.path.exists(slicer_path):
-            try:
-                subprocess.Popen([slicer_path, fc_3mf])
-            except Exception as e:
-                show_message(tr("error_title"), f"{tr('error_launch_slicer')} {e}")
-        else:
-            if not launch_slicer:
-                show_message(tr("info_title"), tr("info_done"))
 
-    # Exécution des commandes externes
+    # ------------------------------------------------------------
+    # 5) Lancement du slicer
+    # ------------------------------------------------------------
+    if launch_slicer and slicer_path and os.path.exists(slicer_path):
+        try:
+            time.sleep(0.2)
+            print("DEBUG launch_slicer =", launch_slicer)
+            print("DEBUG slicer_path =", slicer_path)
+            print("DEBUG slicer_path exists =", os.path.exists(slicer_path))
+            print("DEBUG fc_3mf =", fc_3mf)
+
+            subprocess.Popen([slicer_path, fc_3mf])
+        except Exception as e:
+            show_message(tr("error_title"), f"{tr('error_launch_slicer')} {e}")
+    else:
+        if not launch_slicer:
+            show_message(tr("info_title"), tr("info_done"))
+
+    # ------------------------------------------------------------
+    # 6) Commandes externes
+    # ------------------------------------------------------------
     for checked, cmd, delay in extra_cmds:
         if checked:
             try:
@@ -993,6 +1300,4 @@ def export_replace_geometry():
             except Exception as e:
                 show_message(tr("error_title"), f"{tr('error_external_cmd')} {e}")
 
-# Lancement automatique
-if __name__ == "__main__":
-    export_replace_geometry()
+export_replace_geometry()
