@@ -427,7 +427,7 @@ def is_qidistudio(zip):
         "Metadata/model_settings.config" in names
     )
 
-
+"""
 def is_qidislicer(zip):
     # Slicer moderne Qidi (Cura-like)
     names = zip.namelist()
@@ -436,6 +436,22 @@ def is_qidislicer(zip):
         not any(n.startswith("3D/Objects/") for n in names) and
         "3D/_rels/3dmodel.model.rels" not in names
     )
+"""
+
+def is_qidislicer(zip_file):
+    names = zip_file.namelist()
+    if "3D/3dmodel.model" in names and not any(n.startswith("3D/Objects/") for n in names):
+        try:
+            text = zip_file.read("3D/3dmodel.model").decode("utf-8", errors="replace")
+            print('fichier 3mf qidislicer détecté  aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+            return "<metadata name=\"slic3rpe:Version3mf\"" in text or "Application=QIDISlicer" in text
+
+        except Exception:
+            print('Ce n est pas un fichier 3mf bbbbbbbbbbbbbbbbbbbbbbbbbaaaa')
+            return False
+
+    return False
+
 
 def is_slic3r_style(zip):
     """
@@ -599,44 +615,90 @@ def recenter_vertices(model_data):
         print("⚠️ Erreur recentrage vertex :", e)
         return model_data, CENTER_Z
 
-
 def clean_qidi_style(src_3mf, dst_3mf):
     """
-    Nettoie un 3MF QidiSlicer :
-    - Conserve absolument le fichier 3D/_rels/3dmodel.model.rels
-    - Copie tous les autres fichiers inchangés
-    - Ne supprime rien de critique
+    Nettoie un 3MF QidiSlicer moderne (Cura-like).
+    - Garde uniquement le premier <object> et son <item> dans 3D/3dmodel.model
+    - Supprime les autres objets et items
+    - Nettoie Metadata/Slic3r_PE_model.config pour ne garder que l'objet conservé
+    - Garantit la présence du fichier 3D/_rels/3dmodel.model.rels
     """
 
-    with zipfile.ZipFile(src_3mf, "r") as zin, \
-         zipfile.ZipFile(dst_3mf, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+    model_path = "3D/3dmodel.model"
+    rels_path = "3D/_rels/3dmodel.model.rels"
+    config_path = "Metadata/Slic3r_PE_model.config"
 
-        # Flag pour savoir si le fichier rels est présent
-        rels_present = False
+    with zipfile.ZipFile(src_3mf, "r") as zin:
+        # --- Nettoyage du 3dmodel.model ---
+        model_xml = zin.read(model_path).decode("utf-8")
+        root = ET.fromstring(model_xml)
+        ns = {"m": "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"}
 
-        for item in zin.infolist():
-            name = item.filename
-            data = zin.read(name)
+        objects = root.findall("m:resources/m:object", ns)
+        items = root.findall("m:build/m:item", ns)
 
-            # Conserver absolument le fichier de relations
-            if name == "3D/_rels/3dmodel.model.rels":
-                rels_present = True
-                zout.writestr(name, data)
-                continue
+        keep_object_id = None
+        removed_ids = []
 
-            # Copie inchangée des autres fichiers
-            zout.writestr(name, data)
+        if objects:
+            keep_object_id = objects[0].attrib.get("id")
 
-        # Si le fichier rels est absent → on le recrée minimal
-        if not rels_present:
-            minimal_rels = """<?xml version='1.0' encoding='UTF-8'?>
+        # Supprimer les objets excédentaires
+        for obj in objects[1:]:
+            removed_ids.append(obj.attrib.get("id"))
+            root.find("m:resources", ns).remove(obj)
+
+        # Supprimer les items excédentaires
+        for item in items:
+            if item.attrib.get("objectid") != keep_object_id:
+                removed_ids.append(item.attrib.get("objectid"))
+                root.find("m:build", ns).remove(item)
+
+        new_model_xml = ET.tostring(root, encoding="utf-8")
+
+        # --- Nettoyage du Slic3r_PE_model.config ---
+        if config_path in zin.namelist():
+            cfg_xml = zin.read(config_path).decode("utf-8")
+            cfg_root = ET.fromstring(cfg_xml)
+
+            for obj in cfg_root.findall("object"):
+                if obj.attrib.get("id") != keep_object_id:
+                    removed_ids.append(obj.attrib.get("id"))
+                    cfg_root.remove(obj)
+
+            new_cfg_xml = ET.tostring(cfg_root, encoding="utf-8")
+        else:
+            new_cfg_xml = None
+
+        # --- Réécriture du ZIP nettoyé ---
+        with zipfile.ZipFile(dst_3mf, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                name = item.filename
+                if name == model_path:
+                    zout.writestr(name, new_model_xml)
+                    continue
+                if name == config_path and new_cfg_xml:
+                    zout.writestr(name, new_cfg_xml)
+                    continue
+                zout.writestr(name, zin.read(name))
+
+            # Garantir la présence du rels
+            if rels_path not in zin.namelist():
+                rels_content = """<?xml version='1.0' encoding='UTF-8'?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
  <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel" />
 </Relationships>
 """
-            zout.writestr("3D/_rels/3dmodel.model.rels", minimal_rels)
+                zout.writestr(rels_path, rels_content)
 
-    print("✅ Nettoyage Qidi terminé, rels garanti présent :", dst_3mf)
+    print(f"✅ Nettoyage QidiSlicer terminé. Objet conservé id={keep_object_id}")
+    if removed_ids:
+        print(f"   Objets supprimés : {removed_ids}")
+    else:
+        print("   Aucun objet supprimé (mono-objet déjà).")
+    print(f"   Fichier nettoyé : {dst_3mf}")
+
+
 
 def clean_multi_object_style(src_3mf, dst_3mf, mode="slic3r"):
     """
@@ -784,7 +846,6 @@ def clean_multi_object_style(src_3mf, dst_3mf, mode="slic3r"):
     print("   Fichier nettoyé :", dst_3mf)
 
 
-
 def clean_multi_object_style(src_3mf, dst_3mf, mode="slic3r"):
     """
     Nettoie un 3MF multi-objets (QidiStudio ou Slic3r/Orca/Prusa).
@@ -792,6 +853,7 @@ def clean_multi_object_style(src_3mf, dst_3mf, mode="slic3r"):
     - Supprime les autres .model
     - Nettoie 3D/3dmodel.model pour ne garder que l'objet et l'item correspondant
     - Nettoie Metadata si mode="qidi"
+    Retourne le chemin du fichier objet conservé (keep_model).
     """
 
     rels_path = "3D/_rels/3dmodel.model.rels"
@@ -933,6 +995,7 @@ def clean_multi_object_style(src_3mf, dst_3mf, mode="slic3r"):
     print("   Fichiers supprimés :", to_delete)
     print("   Fichier nettoyé :", dst_3mf)
 
+    return keep_model
 
 
 def replace_mesh_in_model_xml(old_model_xml_bytes, new_model_xml_bytes):
@@ -1020,6 +1083,7 @@ def inject_geometry_into_qidi_3mf(old_3mf_path, new_3mf_path, new_model_xml_byte
 # Routine principale : exporte la sélection en 3MF/STL, injecte géométrie, 
 # lance slicer et commandes externes
 # -------------------------
+
 
 def export_replace_geometry():
     """
@@ -1126,20 +1190,25 @@ def export_replace_geometry():
     # ------------------------------------------------------------
     # 4) Injection géométrie si ancien 3MF
     # ------------------------------------------------------------
-    if os.path.exists(old_3mf_backup):
+    if os.path.exists(fc_3mf) and os.path.exists(old_3mf_backup):
 
         cleaned_old_3mf = base_name + ".cleaned.3mf"
+        keep_model = None
 
         # Détection du slicer source
         with zipfile.ZipFile(old_3mf_backup, "r") as zin:
             if is_qidistudio(zin):
-                clean_multi_object_style(old_3mf_backup, cleaned_old_3mf, mode="qidi")
+                keep_model = clean_multi_object_style(old_3mf_backup, cleaned_old_3mf, mode="qidi")
             elif is_slic3r_style(zin):
-                clean_multi_object_style(old_3mf_backup, cleaned_old_3mf, mode="slic3r")
+                keep_model = clean_multi_object_style(old_3mf_backup, cleaned_old_3mf, mode="slic3r")
             elif is_qidislicer(zin):
+                # ⚠️ QidiSlicer moderne → pas de multi-objets, utiliser clean_qidi_style
                 clean_qidi_style(old_3mf_backup, cleaned_old_3mf)
+                keep_model = None  # pas nécessaire, mono-objet
             else:
                 shutil.copy(old_3mf_backup, cleaned_old_3mf)
+                keep_model = "3D/Objects/object_1.model"  # fallback
+
 
         old_3mf = cleaned_old_3mf
 
@@ -1171,8 +1240,12 @@ def export_replace_geometry():
                 # CAS A : Multi-objets (Slic3r/Orca/QidiStudio)
                 # --------------------------------------------------------
                 if has_objects:
-                    if name.startswith("3D/Objects/") and name.endswith(".model"):
+                    if name == keep_model:
                         new_zip.writestr(name, geom_data_centered)
+                        print(f"   ✅ Objet injecté : {keep_model}")
+                        continue
+                    elif name.startswith("3D/Objects/") and name.endswith(".model"):
+                        # Ignorer les autres objets
                         continue
                     if name.endswith("3dmodel.model"):
                         if keep_positions:
@@ -1232,5 +1305,7 @@ def export_replace_geometry():
                 subprocess.Popen(cmd)
             except Exception as e:
                 show_message(tr("error_title"), f"{tr('error_external_cmd')} {e}")
+
+
 
 export_replace_geometry()
