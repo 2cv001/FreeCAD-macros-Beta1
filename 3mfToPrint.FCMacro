@@ -945,7 +945,6 @@ def inject_geometry_into_qidi_3mf(old_3mf_path, new_3mf_path, new_model_xml_byte
 # lance slicer et commandes externes
 # -------------------------
 
-
 def export_replace_geometry():
     """
     Routine principale :
@@ -978,8 +977,13 @@ def export_replace_geometry():
     fc_3mf = base_name + ".3mf"
     old_3mf_backup = base_name + ".old.3mf"
 
-    # Sauvegarde de l'ancien 3MF
-    if os.path.exists(fc_3mf):
+    # ------------------------------------------------------------
+    # NOUVEAU : on mémorise si le .3mf existait AVANT l'export FreeCAD
+    # ------------------------------------------------------------
+    fc_3mf_existed_at_start = os.path.exists(fc_3mf)
+
+    # Sauvegarde de l'ancien 3MF (seulement si le .3mf existait au départ)
+    if fc_3mf_existed_at_start:
         shutil.move(fc_3mf, old_3mf_backup)
 
     # Vérification de la sélection
@@ -1010,7 +1014,8 @@ def export_replace_geometry():
 
         if slicer_path is None and launch_slicer is None:
             show_message(tr("info_title"), tr("info_cancel"))
-            if os.path.exists(old_3mf_backup) and not os.path.exists(fc_3mf):
+            # Restauration si annulation
+            if fc_3mf_existed_at_start and os.path.exists(old_3mf_backup) and not os.path.exists(fc_3mf):
                 shutil.move(old_3mf_backup, fc_3mf)
             return
 
@@ -1033,7 +1038,8 @@ def export_replace_geometry():
         )
     except Exception as e:
         show_message(tr("error_title"), f"{tr('error_export_3mf')} {e}")
-        if os.path.exists(old_3mf_backup) and not os.path.exists(fc_3mf):
+        # Restauration si échec
+        if fc_3mf_existed_at_start and os.path.exists(old_3mf_backup) and not os.path.exists(fc_3mf):
             shutil.move(old_3mf_backup, fc_3mf)
         return
 
@@ -1051,7 +1057,11 @@ def export_replace_geometry():
     # ------------------------------------------------------------
     # 4) Injection géométrie si ancien 3MF
     # ------------------------------------------------------------
-    if os.path.exists(fc_3mf) and os.path.exists(old_3mf_backup):
+    # 🔥 CORRECTION ICI :
+    # On NE réutilise old_3mf_backup que si le .3mf existait AVANT l'export FreeCAD.
+    # Si l'utilisateur a supprimé le .3mf → old_3mf_backup est ignoré.
+    # ------------------------------------------------------------
+    if fc_3mf_existed_at_start and os.path.exists(old_3mf_backup):
 
         cleaned_old_3mf = base_name + ".cleaned.3mf"
         keep_model = None
@@ -1062,7 +1072,6 @@ def export_replace_geometry():
                 print("   🔎 Slicer détecté : QidiStudio")
                 keep_object_id, keep_model = clean_multi_object_style(old_3mf_backup, cleaned_old_3mf, mode="qidi")
 
-
             elif is_qidislicer(zin):
                 print("   🔎 Slicer détecté : QidiSlicer")
                 clean_qidi_style(old_3mf_backup, cleaned_old_3mf)
@@ -1071,7 +1080,6 @@ def export_replace_geometry():
             elif is_slic3r_style(zin):
                 print("   🔎 Slicer détecté : Slic3r/Orca")
                 keep_object_id, keep_model = clean_multi_object_style(old_3mf_backup, cleaned_old_3mf, mode="slic3r")
-
 
             else:
                 print("   🔎 Slicer détecté : inconnu → copie brute")
@@ -1175,7 +1183,6 @@ def export_replace_geometry():
                 subprocess.Popen(cmd)
             except Exception as e:
                 show_message(tr("error_title"), f"{tr('error_external_cmd')} {e}")
-
 
 
 
