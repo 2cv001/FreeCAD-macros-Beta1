@@ -1,9 +1,11 @@
+
+
 # -*- coding: utf-8 -*-
 """
 Macro FreeCAD multilingue : export 3MF/STL avec contrôle de tessellation,
 conservation des paramètres du slicer, ouverture automatique du slicer,
 et déclenchement de commandes externes (domotique).
-S'il y a deux objets dan sle 3mf source, ne garde que le premier
+S'il y a deux objets dans le 3mf source, ne garde que le premier
 """
 
 import math, os, zipfile, shutil, subprocess, re, fnmatch, xml.etree.ElementTree as ET
@@ -64,6 +66,11 @@ TRANSLATIONS = {
         "error_title": "Erreur",
         "warn_title": "Avertissement",
         "info_title": "Info",
+        
+        # Buttons
+        #"btn_keep": "Conserver", 
+        "btn_delete": "Ok", 
+        "btn_cancel": "Annuler",
 
         # Options UI
         "options_title": "Options d'export vers QidiStudio",
@@ -91,6 +98,12 @@ TRANSLATIONS = {
         "error_no_geom": "❌ Aucun fichier de géométrie détecté dans le 3MF exporté.",
         "error_invalid_slicer": "❌ Le chemin du slicer est invalide :",
         "warn_no_geom_vertices": "L'objet sélectionné n'a pas de géométrie 3D utilisable (par ex. un Sketch).",
+        "warn_incompatible_slicer_dialog":
+            "Le fichier 3MF d’origine provient de : {source}\n"
+            "Le slicer cible sélectionné est :       {target}\n\n"
+            "Ces slicers ne sont pas identiques.\n"
+            "Continuer en effaçant le fichier 3mf, sans récupération des paramètres d'impression ?",
+
 
 
         # Infos
@@ -111,6 +124,8 @@ TRANSLATIONS = {
         "hint_keep_params": "Conserve les paramètres du slicer (profil d'impression).",
         "hint_generate_stl": "Génère aussi un fichier STL en plus du 3MF.",
         "hint_launch_slicer": "Lance automatiquement le slicer après export si le chemin est valide.",
+        "ini_file_label": "Fichier ini :",
+
     },
 
     "en": {
@@ -118,6 +133,12 @@ TRANSLATIONS = {
         "error_title": "Error",
         "warn_title": "Warning",
         "info_title": "Info",
+        
+        
+        # Buttons
+        #"btn_keep": "Keep",
+        "btn_delete": "Ok",
+        "btn_cancel": "Cancel",   
 
         # UI options
         "options_title": "Export options to QidiStudio",
@@ -145,6 +166,12 @@ TRANSLATIONS = {
         "error_no_geom": "❌ No geometry file detected in exported 3MF.",
         "error_invalid_slicer": "❌ Invalid slicer path:",
         "warn_no_geom_vertices": "Selected object does not contain usable 3D geometry (e.g. a Sketch).",
+        "warn_incompatible_slicer_dialog":
+            "The original 3MF file was created by: {source}\n"
+            "The selected target slicer is:        {target}\n\n"
+            "These slicers are not identical.\n"
+            "The macro cannot keep print arameters.\n\n"
+            ".3mf will be deleted",
 
 
         # Infos
@@ -164,6 +191,8 @@ TRANSLATIONS = {
         "hint_keep_params": "Keeps slicer parameters (printing profile).",
         "hint_generate_stl": "Also generates an STL file along with the 3MF.",
         "hint_launch_slicer": "Automatically launches the slicer after export if the path is valid.",
+        "ini_file_label": "INI file:",
+
     }
 }
 
@@ -375,7 +404,7 @@ def ask_user_options(current_slicer, current_linear, current_angular):
     extra_checks = []
     if EXTRA_COMMANDS:
         lbl_ext = QtGui.QLabel(tr("external_actions"))
-        lbl_ext.setToolTip(tr("hint_external_actions") + f"\n\nFichier ini : {INI_FILE}")
+        lbl_ext.setToolTip(tr("hint_external_actions") + f"\n\n{tr('ini_file_label')} {INI_FILE}")
         layout.addWidget(lbl_ext)
         for cmd, label, delay, default in EXTRA_COMMANDS:
             chk = QtGui.QCheckBox(label)
@@ -418,54 +447,141 @@ def ask_user_options(current_slicer, current_linear, current_angular):
 # Fonctions de traitement 3MF / mesh
 # -------------------------
 
+def detect_slicer_target_from_path(path):
+    if not path:
+        return None
 
-def is_qidistudio(zip):
-    # Ancien slicer Qidi (multi-objets)
-    names = zip.namelist()
-    return (
-        "3D/_rels/3dmodel.model.rels" in names and
-        "Metadata/model_settings.config" in names
-    )
+    p = path.lower()
 
-"""
-def is_qidislicer(zip):
-    # Slicer moderne Qidi (Cura-like)
-    names = zip.namelist()
-    return (
-        "3D/3dmodel.model" in names and
-        not any(n.startswith("3D/Objects/") for n in names) and
-        "3D/_rels/3dmodel.model.rels" not in names
-    )
-"""
+    # QidiStudio (ancien slicer)
+    if "qidistudio" in p:
+        return "qidistudio"
 
-def is_qidislicer(zip_file):
-    names = zip_file.namelist()
-    if "3D/3dmodel.model" in names and not any(n.startswith("3D/Objects/") for n in names):
-        try:
-            text = zip_file.read("3D/3dmodel.model").decode("utf-8", errors="replace")
-            print('fichier 3mf qidislicer détecté  aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
-            return "<metadata name=\"slic3rpe:Version3mf\"" in text or "Application=QIDISlicer" in text
+    # QidiSlicer (moderne, fork Prusa)
+    if "qidislicer" in p:
+        return "qidislicer"
 
-        except Exception:
-            print('Ce n est pas un fichier 3mf bbbbbbbbbbbbbbbbbbbbbbbbbaaaa')
-            return False
+    # Fallback Qidi (au cas où)
+    if "qidi" in p:
+        return "qidi"
+
+    # Prusa / Orca / Bambu / SuperSlicer
+    if any(x in p for x in ("orca", "prusa", "bambu", "super")):
+        return "slic3r"
+
+    # Cura
+    if "cura" in p:
+        return "cura"
+
+    return "unknown"
+
+
+
+def is_qidistudio(zipin):
+    names = zipin.namelist()
+
+    # 1) Signature multi-objets QidiStudio
+    if any(n.startswith("3D/Objects/") and n.endswith(".model") for n in names):
+
+        # 2) Fichiers de configuration QidiStudio (ancien ou nouveau)
+        if "Metadata/model_settings.config" in names:
+            return True
+        if "Metadata/model_settings.json" in names:
+            return True
+
+        # 3) Analyse du 3dmodel.model
+        if "3D/3dmodel.model" in names:
+            try:
+                data = zipin.read("3D/3dmodel.model").decode("utf-8", "ignore").lower()
+
+                # Signatures QidiStudio
+                if "qidistudio" in data:
+                    return True
+                if "qidi" in data and "application" in data:
+                    return True
+
+                # Exclusion explicite Prusa/Slic3r
+                if "prusaslicer" in data or "slic3r" in data:
+                    return False
+
+            except:
+                pass
 
     return False
 
 
-def is_slic3r_style(zip):
+def is_qidislicer(zipin):
+    names = zipin.namelist()
+
+    # --- Signature moderne QidiSlicer (la seule fiable) ---
+    if "3D/3dmodel.model" in names:
+        try:
+            data = zipin.read("3D/3dmodel.model").decode("utf-8", "ignore").lower()
+            if "application" in data and "qidislicer" in data:
+                return True
+        except Exception as e:
+            print("⚠️ is_qidislicer: erreur lecture 3dmodel.model :", e)
+            return False
+
+    # --- Anciennes signatures QidiSlicer (versions Cura-like) ---
+    if "Metadata/plate.ini" in names:
+        return True
+    if "Metadata/print_settings.ini" in names and "Metadata/filament_settings.ini" in names:
+        return True
+
+    return False
+
+
+def is_slic3r_style(zipin):
     """
-    Détection des 3MF style Slic3r/Prusa/Orca :
-    - Présence de plusieurs objets dans 3D/Objects/
-    - Fichier principal 3D/3dmodel.model
-    - Pas de Metadata spécifique QidiStudio
+    Détection des 3MF style Slic3r/Prusa/Orca/SuperSlicer.
+    IMPORTANT :
+    - QidiSlicer 1.2.5 utilise des fichiers Slic3r_PE → NE PAS le classer ici.
     """
-    names = zip.namelist()
-    has_objects = any(n.startswith("3D/Objects/") and n.endswith(".model") for n in names)
-    has_main_model = "3D/3dmodel.model" in names
-    # On exclut QidiStudio qui a aussi Metadata/model_settings.config
-    is_not_qidi = "Metadata/model_settings.config" not in names
-    return has_objects and has_main_model and is_not_qidi
+
+    names = zipin.namelist()
+
+    # --- Exclusion PRIORITAIRE : QidiSlicer ---
+    # (QidiSlicer moderne utilise des fichiers Slic3r_PE)
+    try:
+        if "3D/3dmodel.model" in names:
+            data = zipin.read("3D/3dmodel.model").decode("utf-8", "ignore").lower()
+            if "application" in data and "qidislicer" in data:
+                return False  # surtout pas Slic3r
+    except Exception as e:
+        print("⚠️ is_slic3r_style: erreur lecture 3dmodel.model :", e)
+
+    # --- 1) Signatures PrusaSlicer / Slic3r / SuperSlicer / Orca ---
+    if any("Slic3r_PE" in n for n in names):
+        return True
+    if "Metadata/Prusa_Slicer_wipe_tower_information.xml" in names:
+        return True
+
+    # Multi-objets Slic3r/Orca
+    if any(n.startswith("3D/Objects/") and n.endswith(".model") for n in names):
+        return True
+
+    # --- 2) Analyse du 3dmodel.model ---
+    if "3D/3dmodel.model" in names:
+        try:
+            data = zipin.read("3D/3dmodel.model").decode("utf-8", "ignore").lower()
+
+            if "prusaslicer" in data:
+                return True
+            if "slic3rpe" in data:
+                return True
+            if "slic3r" in data:
+                return True
+            if "superslicer" in data:
+                return True
+            if "orcaslicer" in data:
+                return True
+
+        except Exception as e:
+            print("⚠️ is_slic3r_style: erreur lecture 3dmodel.model :", e)
+
+    return False
+
 
 
 # Recherche le fichier de géométrie principal dans une archive 3MF
@@ -857,6 +973,107 @@ def clean_multi_object_style(src_3mf, dst_3mf, mode="qidi"):
     return keep_object_id, keep_model
 
 
+def clean_prusa_style(src_3mf, dst_3mf):
+    """
+    Nettoyage complet pour PrusaSlicer :
+    - Cas 1 : mono-objet → copie brute
+    - Cas 2 : duplications dans <build> → garder un seul <item>
+    - Cas 3 : multi-objets réels dans <resources> → garder un seul objet
+    """
+
+    print("\n=== Nettoyage PrusaSlicer ===")
+
+    model_path = "3D/3dmodel.model"
+    rels_path = "3D/_rels/3dmodel.model.rels"
+    config_path = "Metadata/Slic3r_PE_model.config"
+
+    with zipfile.ZipFile(src_3mf, "r") as zin:
+
+        # --- 1) Lire le modèle principal ---
+        model_txt = zin.read(model_path).decode("utf-8")
+
+        # --- 2) Détecter les objets dans <resources> ---
+        objects = re.findall(r'<object[^>]*id="(\d+)"', model_txt)
+        objects = list(dict.fromkeys(objects))  # unique
+
+        print(f"📦 Objets trouvés dans <resources> : {objects}")
+
+        # CAS 1 : Mono-objet → rien à nettoyer
+        if len(objects) <= 1:
+            print("➡️ Mono-objet Prusa → copie brute")
+            shutil.copy(src_3mf, dst_3mf)
+            return objects[0] if objects else None, model_path
+
+        # CAS 2 : Multi-objets réels
+        keep_object_id = objects[0]
+        delete_ids = objects[1:]
+
+        print(f"➡️ Objet conservé : {keep_object_id}")
+        print(f"🗑️ Objets supprimés : {delete_ids}")
+
+        # --- Nettoyage du 3dmodel.model ---
+        # Supprimer les <object> excédentaires
+        for oid in delete_ids:
+            model_txt = re.sub(
+                rf'<object[^>]*id="{oid}"[\s\S]*?</object>',
+                '',
+                model_txt
+            )
+
+        # Supprimer les <item> excédentaires
+        model_txt = re.sub(
+            rf'<item[^>]*objectid="(?!{keep_object_id}")([^"]*)"[^>]*/>',
+            '',
+            model_txt
+        )
+
+        # --- Nettoyage du fichier Slic3r_PE_model.config ---
+        if config_path in zin.namelist():
+            cfg_txt = zin.read(config_path).decode("utf-8")
+
+            for oid in delete_ids:
+                cfg_txt = re.sub(
+                    rf'<object[^>]*id="{oid}"[\s\S]*?</object>',
+                    '',
+                    cfg_txt
+                )
+
+        # --- Nettoyage du rels ---
+        if rels_path in zin.namelist():
+            rels_txt = zin.read(rels_path).decode("utf-8")
+            rels_txt = re.sub(
+                rf'<Relationship[^>]*Target="[^"]*object_{delete_ids[0]}\.model"[^>]*/>',
+                '',
+                rels_txt
+            )
+
+        # --- Réécriture du ZIP ---
+        print("📦 Réécriture du fichier nettoyé…")
+
+        with zipfile.ZipFile(dst_3mf, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                name = item.filename.replace("\\", "/")
+
+                if name == model_path:
+                    zout.writestr(name, model_txt)
+                    continue
+
+                if name == config_path:
+                    zout.writestr(name, cfg_txt)
+                    continue
+
+                if name == rels_path:
+                    zout.writestr(name, rels_txt)
+                    continue
+
+                zout.writestr(name, zin.read(item.filename))
+
+    print("✅ Nettoyage PrusaSlicer terminé.")
+    print(f"➡️ Objet final conservé : {keep_object_id}")
+    print(f"➡️ Fichier nettoyé : {dst_3mf}")
+
+    return keep_object_id, model_path
+
 
 
 def replace_mesh_in_model_xml(old_model_xml_bytes, new_model_xml_bytes):
@@ -938,18 +1155,47 @@ def inject_geometry_into_qidi_3mf(old_3mf_path, new_3mf_path, new_model_xml_byte
             zout.writestr(name, data)
 
 
+def ask_incompatible_slicer_dialog(s_source, s_target):
+    """
+    Boîte de dialogue Qt en cas de slicer source != slicer cible.
+    Retourne: "keep", "delete" ou "cancel".
+    """
+    msg = QtGui.QMessageBox()
+    msg.setIcon(QtGui.QMessageBox.Warning)
+    msg.setWindowTitle(tr("warn_title"))
+
+    # Texte multilingue avec insertion des valeurs
+    txt = tr("warn_incompatible_slicer_dialog").format(
+        source=s_source,
+        target=s_target
+    )
+    msg.setText(txt)
+
+    # Boutons 
+    #btn_keep = msg.addButton(tr("btn_keep"), QtGui.QMessageBox.AcceptRole)
+    btn_delete = msg.addButton(tr("btn_delete"), QtGui.QMessageBox.DestructiveRole)
+    btn_cancel = msg.addButton(tr("btn_cancel"), QtGui.QMessageBox.RejectRole)
+
+    msg.exec()
+
+    #if msg.clickedButton() == btn_keep:
+    #    return "keep"
+    if msg.clickedButton() == btn_delete:
+        return "delete"
+    return "cancel"
+
+
 # -------------------------
 # Routine principale
 # -------------------------
 # Routine principale : exporte la sélection en 3MF/STL, injecte géométrie, 
 # lance slicer et commandes externes
 # -------------------------
-
 def export_replace_geometry():
     """
     Routine principale :
     - Exporte la sélection en 3MF/STL (FreeCAD)
-    - Injecte la géométrie dans un ancien 3MF (si présent)
+    - Injecte la géométrie dans un ancien 3MF (si présent et compatible)
       * en conservant la structure OPC, les métadonnées et les namespaces
       * en remplaçant uniquement la géométrie (<mesh>) pour QidiSlicer
     - Conserve ou non les paramètres du slicer
@@ -977,9 +1223,7 @@ def export_replace_geometry():
     fc_3mf = base_name + ".3mf"
     old_3mf_backup = base_name + ".old.3mf"
 
-    # ------------------------------------------------------------
-    # NOUVEAU : on mémorise si le .3mf existait AVANT l'export FreeCAD
-    # ------------------------------------------------------------
+    # Mémorise si le .3mf existait AVANT l'export FreeCAD
     fc_3mf_existed_at_start = os.path.exists(fc_3mf)
 
     # Sauvegarde de l'ancien 3MF (seulement si le .3mf existait au départ)
@@ -993,9 +1237,14 @@ def export_replace_geometry():
     ]
     if not selection:
         show_message(tr("warn_title"), tr("warn_no_selection"))
+        # Restauration éventuelle
+        if fc_3mf_existed_at_start and os.path.exists(old_3mf_backup) and not os.path.exists(fc_3mf):
+            shutil.move(old_3mf_backup, fc_3mf)
         return
     if len(selection) > 1:
         show_message(tr("warn_title"), tr("warn_multi_selection"))
+        if fc_3mf_existed_at_start and os.path.exists(old_3mf_backup) and not os.path.exists(fc_3mf):
+            shutil.move(old_3mf_backup, fc_3mf)
         return
 
     # ------------------------------------------------------------
@@ -1012,6 +1261,7 @@ def export_replace_geometry():
             slicer_path_pref, linear_pref, angular_pref
         )
 
+        # Annulation de la boîte d’options
         if slicer_path is None and launch_slicer is None:
             show_message(tr("info_title"), tr("info_cancel"))
             # Restauration si annulation
@@ -1019,6 +1269,7 @@ def export_replace_geometry():
                 shutil.move(old_3mf_backup, fc_3mf)
             return
 
+        # Chemin slicer invalide
         if launch_slicer and slicer_path and not os.path.exists(slicer_path):
             show_message(tr("error_title"), f"{tr('error_invalid_slicer')}\n{slicer_path}")
             continue
@@ -1057,34 +1308,87 @@ def export_replace_geometry():
     # ------------------------------------------------------------
     # 4) Injection géométrie si ancien 3MF
     # ------------------------------------------------------------
-    # 🔥 CORRECTION ICI :
-    # On NE réutilise old_3mf_backup que si le .3mf existait AVANT l'export FreeCAD.
-    # Si l'utilisateur a supprimé le .3mf → old_3mf_backup est ignoré.
-    # ------------------------------------------------------------
-    if fc_3mf_existed_at_start and os.path.exists(old_3mf_backup):
+
+    inject_possible = fc_3mf_existed_at_start and os.path.exists(old_3mf_backup)
+
+    slicer_source = "unknown"
+    slicer_target = None
+
+    if inject_possible:
+        # Détection du slicer source (sans nettoyer pour l’instant)
+        with zipfile.ZipFile(old_3mf_backup, "r") as zin:
+            if is_qidistudio(zin):
+                print("   🔎 Slicer détecté (source) : QidiStudio")
+                slicer_source = "qidistudio"
+            elif is_qidislicer(zin):
+                print("   🔎 Slicer détecté (source) : QidiSlicer")
+                slicer_source = "qidislicer"
+            elif is_slic3r_style(zin) and not is_qidislicer(zin):
+
+                print("   🔎 Slicer détecté (source) : Slic3r/Orca/Prusa")
+                slicer_source = "slic3r"
+            else:
+                print("   🔎 Slicer détecté (source) : inconnu")
+                slicer_source = "unknown"
+
+        # Détection du slicer cible à partir du chemin (peut être None si pas de slicer)
+        slicer_target = detect_slicer_target_from_path(slicer_path) if slicer_path else None
+
+        # Si on connaît les deux et qu’ils sont différents → on demande à l’utilisateur
+        if slicer_target not in (None, "unknown") and slicer_source not in (None, "unknown") \
+           and slicer_source != slicer_target:
+
+            action = ask_incompatible_slicer_dialog(slicer_source, slicer_target)
+
+            if action == "cancel":
+                # Restauration et arrêt
+                if os.path.exists(fc_3mf):
+                    os.remove(fc_3mf)
+                if fc_3mf_existed_at_start and os.path.exists(old_3mf_backup):
+                    shutil.move(old_3mf_backup, fc_3mf)
+                print("❌ Opération annulée par l’utilisateur (slicers incompatibles).")
+                return
+
+            if action == "delete":
+                # On supprime l’ancien 3MF : il n’y aura PAS d’injection
+                print("🗑️ Suppression de l’ancien 3MF incompatible.")
+                try:
+                    os.remove(old_3mf_backup)
+                except Exception as e:
+                    print("⚠️ Impossible de supprimer l’ancien 3MF :", e)
+                inject_possible = False
+            """
+            if action == "keep":
+                # On garde l’ancien 3MF en .old, mais on n’injecte pas
+                print("ℹ️ Ancien 3MF conservé (non utilisé). Pas d’injection.")
+                inject_possible = False
+            """
+
+    if inject_possible and os.path.exists(old_3mf_backup):
 
         cleaned_old_3mf = base_name + ".cleaned.3mf"
         keep_model = None
 
-        # Détection du slicer source
-        with zipfile.ZipFile(old_3mf_backup, "r") as zin:
-            if is_qidistudio(zin):
-                print("   🔎 Slicer détecté : QidiStudio")
-                keep_object_id, keep_model = clean_multi_object_style(old_3mf_backup, cleaned_old_3mf, mode="qidi")
+        # Nettoyage en fonction du slicer source (MAINTENANT SEULEMENT)
+        if slicer_source == "qidistudio":
+            keep_object_id, keep_model = clean_multi_object_style(
+                old_3mf_backup, cleaned_old_3mf, mode="qidi"
+            )
 
-            elif is_qidislicer(zin):
-                print("   🔎 Slicer détecté : QidiSlicer")
-                clean_qidi_style(old_3mf_backup, cleaned_old_3mf)
-                keep_model = None
+        elif slicer_source == "qidislicer":
+            clean_qidi_style(old_3mf_backup, cleaned_old_3mf)
+            keep_model = None  # mono-objet
 
-            elif is_slic3r_style(zin):
-                print("   🔎 Slicer détecté : Slic3r/Orca")
-                keep_object_id, keep_model = clean_multi_object_style(old_3mf_backup, cleaned_old_3mf, mode="slic3r")
+        elif slicer_source == "slic3r":
+            keep_object_id, keep_model = clean_prusa_style(
+                old_3mf_backup,
+                cleaned_old_3mf
+            )
 
-            else:
-                print("   🔎 Slicer détecté : inconnu → copie brute")
-                shutil.copy(old_3mf_backup, cleaned_old_3mf)
-                keep_model = "3D/Objects/object_1.model"
+        else:
+            # inconnu → copie brute
+            shutil.copy(old_3mf_backup, cleaned_old_3mf)
+            keep_model = "3D/Objects/object_1.model"
 
         old_3mf = cleaned_old_3mf
 
@@ -1157,6 +1461,8 @@ def export_replace_geometry():
         print("✅ Export avec récupération des paramètres du slicer :", fc_3mf)
 
     else:
+        # Soit il n’y avait pas d’ancien 3MF,
+        # soit l’utilisateur a choisi de ne pas injecter (slicers différents)
         print("✅ Fichier généré uniquement par FreeCAD :", fc_3mf)
 
     # ------------------------------------------------------------
