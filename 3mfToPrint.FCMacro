@@ -103,6 +103,20 @@ TRANSLATIONS = {
             "Le slicer cible sélectionné est :       {target}\n\n"
             "Ces slicers ne sont pas identiques.\n"
             "Continuer en effaçant le fichier 3mf, sans récupération des paramètres d'impression ?",
+        "warn_empty_plate":
+            "⚠️ Le fichier 3MF du slicer ne contient aucun objet et ne peut servir de base.\n"
+            "Cela arrive souvent après une suppression dans le slicer.\n\n"
+            "Que souhaitez-vous faire ?\n\n"
+            "• Restaurer l'ancien fichier 3MF du slicer\n"
+            "• Supprimer le 3MF exporté par FreeCAD et repartir comme un nouveau projet\n"
+            "• Annuler",
+        "btn_restore_old_3mf": "Restaurer l'ancien 3MF",
+        "btn_reset_new_project": "Repartir à zéro",
+
+
+        
+            
+
 
 
 
@@ -171,6 +185,18 @@ TRANSLATIONS = {
             "The selected target slicer is:        {target}\n\n"
             "These slicers are not identical.\n"
             "Continue by deleting the 3MF file, without recovering the print settings?\n\n",
+                    
+        "warn_empty_plate":
+            "⚠️ The slicer's 3MF file contains no objects and cannot be used as a base.\n"
+            "This often happens after deleting objects inside the slicer.\n\n"
+            "What would you like to do?\n\n"
+            "• Restore the previous 3MF file from the slicer\n"
+            "• Delete the 3MF exported by FreeCAD and start a new project\n"
+            "• Cancel",
+        "btn_restore_old_3mf": "Restore previous 3MF",
+        "btn_reset_new_project": "Start a new project",
+
+
 
 
         # Infos
@@ -474,8 +500,6 @@ def detect_slicer_target_from_path(path):
         return "cura"
 
     return "unknown"
-
-
 
 def is_qidistudio(zipin):
     names = zipin.namelist()
@@ -1218,6 +1242,507 @@ def ask_incompatible_slicer_dialog(s_source, s_target):
     return "cancel"
 
 
+def prepare_environment():
+    """
+    Prépare l’environnement :
+    - charge la config
+    - vérifie le document FreeCAD
+    - détecte le .3mf existant
+    - renomme en .old.3mf si nécessaire
+
+    Retourne :
+        (cfg, doc, base_name, fc_3mf, old_3mf_backup, fc_3mf_existed_at_start)
+    ou None en cas d’erreur.
+    """
+
+    cfg = load_config()
+
+    # Vérification document
+    doc = FreeCAD.ActiveDocument
+    if not doc:
+        show_message(tr("error_title"), tr("error_no_doc"))
+        return None
+
+    fcstd_path = doc.FileName
+    if not fcstd_path:
+        show_message(tr("error_title"), tr("error_no_save"))
+        return None
+
+    # Construction des chemins
+    base_name = os.path.splitext(fcstd_path)[0]
+    fc_3mf = base_name + ".3mf"
+    old_3mf_backup = base_name + ".old.3mf"
+
+    # Détection du .3mf existant AVANT export
+    fc_3mf_existed_at_start = os.path.exists(fc_3mf)
+
+    # Sauvegarde de l'ancien 3MF (seulement si le .3mf existait au départ)
+    if fc_3mf_existed_at_start:
+        try:
+            shutil.move(fc_3mf, old_3mf_backup)
+        except Exception as e:
+            show_message(tr("error_title"), f"{tr('error_backup_3mf')} {e}")
+            return None
+
+    return (cfg, doc, base_name, fc_3mf, old_3mf_backup, fc_3mf_existed_at_start)
+
+
+def get_valid_selection(fc_3mf, old_3mf_backup, fc_3mf_existed_at_start):
+    """
+    Vérifie la sélection FreeCAD :
+    - 0 objet → message + restauration éventuelle
+    - >1 objet → message + restauration éventuelle
+    Retourne :
+        [obj]  → sélection valide
+        None   → erreur ou annulation
+    """
+
+    # Récupération des objets sélectionnés ayant une Shape valide
+    selection = [
+        obj for obj in FreeCADGui.Selection.getSelection()
+        if hasattr(obj, "Shape") and obj.Shape is not None
+    ]
+
+    # Aucun objet sélectionné
+    if not selection:
+        show_message(tr("warn_title"), tr("warn_no_selection"))
+
+        # Restauration éventuelle du .old.3mf
+        if fc_3mf_existed_at_start \
+           and os.path.exists(old_3mf_backup) \
+           and not os.path.exists(fc_3mf):
+            shutil.move(old_3mf_backup, fc_3mf)
+
+        return None
+
+    # Trop d’objets sélectionnés
+    if len(selection) > 1:
+        show_message(tr("warn_title"), tr("warn_multi_selection"))
+
+        # Restauration éventuelle du .old.3mf
+        if fc_3mf_existed_at_start \
+           and os.path.exists(old_3mf_backup) \
+           and not os.path.exists(fc_3mf):
+            shutil.move(old_3mf_backup, fc_3mf)
+
+        return None
+
+    # Sélection valide : un seul objet
+    return selection
+
+
+def get_user_options(cfg):
+    """
+    Affiche la boîte de dialogue utilisateur :
+    - paramètres FreeCAD
+    - positions
+    - STL
+    - slicer
+    - commandes externes
+
+    Gère :
+    - annulation
+    - validation du chemin du slicer
+    - sauvegarde des préférences
+
+    Retourne :
+        (keep_params, keep_positions, generate_stl,
+         slicer_path, launch_slicer,
+         linear_value, angular_value, extra_cmds)
+    ou None si annulation.
+    """
+
+    # Préférences actuelles
+    slicer_path_pref = cfg.get("slicer_exe", DEFAULT_SLICER_EXE)
+    linear_pref = cfg.get("linear_deflection", DEFAULT_LINEAR_DEFLECTION)
+    angular_pref = cfg.get("angular_deflection", DEFAULT_ANGULAR_DEFLECTION)
+
+    while True:
+        # Appel de la boîte de dialogue utilisateur
+        (keep_params, keep_positions, generate_stl,
+         slicer_path, launch_slicer,
+         linear_value, angular_value, extra_cmds) = ask_user_options(
+            slicer_path_pref, linear_pref, angular_pref
+        )
+
+        # Annulation
+        if slicer_path is None and launch_slicer is None:
+            show_message(tr("info_title"), tr("info_cancel"))
+            return None
+
+        # Validation du chemin du slicer
+        if launch_slicer and slicer_path and not os.path.exists(slicer_path):
+            show_message(tr("error_title"), f"{tr('error_invalid_slicer')}\n{slicer_path}")
+            continue
+
+        # Options valides → on sort de la boucle
+        break
+
+    # Sauvegarde des préférences
+    save_settings(
+        linear=linear_value,
+        angular_rad=angular_value,
+        slicer_path=slicer_path
+    )
+
+    return (keep_params, keep_positions, generate_stl,
+            slicer_path, launch_slicer,
+            linear_value, angular_value, extra_cmds)
+
+
+def export_freecad_files(selection, base_name, fc_3mf, generate_stl,
+                         linear_value, angular_value,
+                         fc_3mf_existed_at_start, old_3mf_backup):
+    """
+    Exporte :
+    - 3MF FreeCAD
+    - STL si demandé
+
+    Gère :
+    - erreurs d’export
+    - restauration éventuelle du .old.3mf
+
+    Retourne :
+        True  → export OK
+        False → erreur ou restauration
+    """
+
+    # ------------------------------------------------------------
+    # Export 3MF FreeCAD
+    # ------------------------------------------------------------
+    try:
+        export_selection_with_deflection(
+            selection, fc_3mf,
+            linear_deflection=linear_value,
+            angular_deflection=angular_value
+        )
+    except Exception as e:
+        show_message(tr("error_title"), f"{tr('error_export_3mf')} {e}")
+
+        # Restauration éventuelle
+        if fc_3mf_existed_at_start \
+           and os.path.exists(old_3mf_backup) \
+           and not os.path.exists(fc_3mf):
+            shutil.move(old_3mf_backup, fc_3mf)
+
+        return False
+
+    # ------------------------------------------------------------
+    # Export STL (optionnel)
+    # ------------------------------------------------------------
+    if generate_stl:
+        try:
+            export_stl_with_deflection(
+                selection, base_name + ".stl",
+                linear_deflection=linear_value,
+                angular_deflection=angular_value
+            )
+        except Exception as e:
+            show_message(tr("error_title"), f"{tr('error_generate_stl')} {e}")
+            # On continue malgré l’erreur STL
+
+    return True
+
+def handle_empty_plate(fc_3mf_existed_at_start, old_3mf_backup, fc_3mf):
+    """
+    Analyse le plateau vide :
+    - Si un 3MF existait avant l’export FreeCAD
+    - Si old_3mf_backup ne contient aucun mesh réel
+    → propose :
+        • Restaurer l'ancien 3MF
+        • Repartir à zéro
+        • Annuler
+
+    Peut relancer la macro automatiquement.
+
+    Retourne :
+        True  → continuer le workflow
+        False → arrêter la macro
+    """
+
+    # On ne teste le plateau vide QUE si un 3MF existait avant l’export
+    if not fc_3mf_existed_at_start:
+        return True
+
+    # Vérifie si old_3mf_backup existe et contient un vrai mesh
+    if not (os.path.exists(old_3mf_backup) and not zip_contains_real_mesh(old_3mf_backup)):
+        return True  # Pas de plateau vide → on continue
+
+    # Plateau vide détecté → boîte de dialogue
+    msg = tr("warn_empty_plate")
+
+    box = QtGui.QMessageBox()
+    box.setWindowTitle(tr("warn_empty_plate_title"))
+    box.setText(msg)
+
+    restore_btn = box.addButton(tr("btn_restore_old_3mf"), QtGui.QMessageBox.AcceptRole)
+    reset_btn   = box.addButton(tr("btn_reset_new_project"), QtGui.QMessageBox.DestructiveRole)
+    cancel_btn  = box.addButton(QtGui.QMessageBox.Cancel)
+
+    box.exec()
+    clicked = box.clickedButton()
+
+    # ------------------------------------------------------------
+    # 1) Restaurer l'ancien 3MF
+    # ------------------------------------------------------------
+    if clicked == restore_btn:
+        if os.path.exists(fc_3mf):
+            os.remove(fc_3mf)
+        shutil.move(old_3mf_backup, fc_3mf)
+        print("🔄 Ancien 3MF restauré. Relance de la macro.")
+        export_replace_geometry()
+        return False  # On arrête ce cycle
+
+    # ------------------------------------------------------------
+    # 2) Repartir à zéro
+    # ------------------------------------------------------------
+    elif clicked == reset_btn:
+        if os.path.exists(fc_3mf):
+            os.remove(fc_3mf)
+        print("🗑️ Nouveau projet : 3MF FreeCAD supprimé. Relance de la macro.")
+        export_replace_geometry()
+        return False  # On arrête ce cycle
+
+    # ------------------------------------------------------------
+    # 3) Annuler
+    # ------------------------------------------------------------
+    else:
+        print("ℹ️ Annulé par l’utilisateur.")
+        return False
+
+
+def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existed_at_start,
+                                slicer_path, keep_params, keep_positions):
+    """
+    Injection géométrique :
+    - Détecte le slicer source (QidiStudio, QidiSlicer, Slic3r/Prusa/Orca, Cura)
+    - Vérifie compatibilité avec le slicer cible
+    - Nettoie le 3MF source selon le slicer
+    - Injecte la géométrie FreeCAD
+    - Reconstruit le 3MF final
+
+    Ne retourne rien (effets sur fichiers).
+    """
+
+    # ------------------------------------------------------------
+    # 1) Vérifier si injection possible
+    # ------------------------------------------------------------
+    is_slicer_file = os.path.exists(old_3mf_backup) and zip_contains_real_mesh(old_3mf_backup)
+    inject_possible = fc_3mf_existed_at_start and is_slicer_file
+
+    slicer_source = "unknown"
+    slicer_target = None
+
+    if not inject_possible:
+        print("✅ Fichier généré uniquement par FreeCAD :", fc_3mf)
+        return
+
+    # ------------------------------------------------------------
+    # 2) Détection du slicer source
+    # ------------------------------------------------------------
+    with zipfile.ZipFile(old_3mf_backup, "r") as zin:
+        if is_qidistudio(zin):
+            print("   🔎 Slicer détecté (source) : QidiStudio")
+            slicer_source = "qidistudio"
+        elif is_qidislicer(zin):
+            print("   🔎 Slicer détecté (source) : QidiSlicer")
+            slicer_source = "qidislicer"
+        elif is_slic3r_style(zin) and not is_qidislicer(zin):
+            print("   🔎 Slicer détecté (source) : Slic3r/Orca/Prusa")
+            slicer_source = "slic3r"
+        elif is_cura(zin):
+            print("   🔎 Slicer détecté (source) : Cura")
+            slicer_source = "cura"
+        else:
+            print("   🔎 Slicer détecté (source) : inconnu")
+            slicer_source = "unknown"
+
+    # ------------------------------------------------------------
+    # 3) Détection du slicer cible
+    # ------------------------------------------------------------
+    slicer_target = detect_slicer_target_from_path(slicer_path) if slicer_path else None
+
+    # ------------------------------------------------------------
+    # 4) Gestion des incompatibilités
+    # ------------------------------------------------------------
+    if slicer_target not in (None, "unknown") and slicer_source not in (None, "unknown") \
+       and slicer_source != slicer_target:
+
+        action = ask_incompatible_slicer_dialog(slicer_source, slicer_target)
+
+        if action == "cancel":
+            if os.path.exists(fc_3mf):
+                os.remove(fc_3mf)
+            if fc_3mf_existed_at_start and os.path.exists(old_3mf_backup):
+                shutil.move(old_3mf_backup, fc_3mf)
+            print("❌ Opération annulée par l’utilisateur (slicers incompatibles).")
+            return
+
+        if action == "delete":
+            print("🗑️ Suppression de l’ancien 3MF incompatible.")
+            try:
+                os.remove(old_3mf_backup)
+            except Exception as e:
+                print("⚠️ Impossible de supprimer l’ancien 3MF :", e)
+            inject_possible = False
+
+    if not inject_possible:
+        print("⚠️ Injection impossible, export FreeCAD seul.")
+        return
+
+    # ------------------------------------------------------------
+    # 5) Nettoyage du 3MF selon le slicer source
+    # ------------------------------------------------------------
+    cleaned_old_3mf = base_name + ".cleaned.3mf"
+    keep_model = None
+
+    if slicer_source == "qidistudio":
+        keep_object_id, keep_model = clean_multi_object_style(
+            old_3mf_backup, cleaned_old_3mf, mode="qidi"
+        )
+
+    elif slicer_source == "qidislicer":
+        clean_qidi_style(old_3mf_backup, cleaned_old_3mf)
+        keep_model = None
+
+    elif slicer_source == "slic3r":
+        keep_object_id, keep_model = clean_prusa_style(
+            old_3mf_backup,
+            cleaned_old_3mf
+        )
+
+    else:
+        shutil.copy(old_3mf_backup, cleaned_old_3mf)
+        keep_model = "3D/Objects/object_1.model"
+
+    old_3mf = cleaned_old_3mf
+
+    # ------------------------------------------------------------
+    # 6) Extraction géométrie FreeCAD
+    # ------------------------------------------------------------
+    geom_entry = find_geom_file_in_3mf(fc_3mf)
+    if not geom_entry:
+        show_message(tr("error_title"), tr("error_no_geom"))
+        return
+
+    with zipfile.ZipFile(fc_3mf, 'r') as fc_zip:
+        geom_data = fc_zip.read(geom_entry)
+
+    geom_data_centered, zmax = recenter_vertices(geom_data)
+
+    # ------------------------------------------------------------
+    # 7) Reconstruction du 3MF final
+    # ------------------------------------------------------------
+    tmp_new = base_name + ".new.3mf"
+
+    with zipfile.ZipFile(old_3mf, 'r') as old_zip, \
+         zipfile.ZipFile(tmp_new, 'w', compression=zipfile.ZIP_DEFLATED) as new_zip:
+
+        names = old_zip.namelist()
+        has_objects = any(n.startswith("3D/Objects/") for n in names)
+
+        for item in old_zip.infolist():
+            name = item.filename
+            data = old_zip.read(name)
+
+            # Cas multi-objets
+            if has_objects:
+
+                # Remplacement du modèle principal
+                if name == keep_model:
+                    new_zip.writestr(name, geom_data_centered)
+                    print(f"   ✅ Objet injecté : {keep_model}")
+                    continue
+
+                # Suppression des autres objets
+                elif name.startswith("3D/Objects/") and name.endswith(".model"):
+                    continue
+
+                # Transformations
+                if name.endswith("3dmodel.model"):
+                    if keep_positions:
+                        data = force_zmax_in_transform(data, zmax)
+                    else:
+                        data = reset_item_transform(data, center=(CENTER_X, CENTER_Y, zmax))
+                    new_zip.writestr(name, data)
+                    continue
+
+                # Métadonnées
+                if not keep_params and name.startswith("Metadata/"):
+                    continue
+
+                new_zip.writestr(name, data)
+                continue
+
+            # Cas Qidi mono-objet
+            else:
+                new_zip.close()
+                inject_geometry_into_qidi_3mf(old_3mf, tmp_new, geom_data_centered)
+                break
+
+    # ------------------------------------------------------------
+    # 8) Remplacement du fichier final
+    # ------------------------------------------------------------
+    if os.path.exists(fc_3mf):
+        os.remove(fc_3mf)
+    shutil.move(tmp_new, fc_3mf)
+
+    if os.path.exists(old_3mf):
+        os.remove(old_3mf)
+
+    print("✅ Export avec récupération des paramètres du slicer :", fc_3mf)
+
+
+def launch_slicer_if_needed(slicer_path, launch_slicer, fc_3mf):
+    """
+    Lance le slicer si demandé par l’utilisateur.
+    - Vérifie l’existence du chemin
+    - Ouvre le slicer avec le fichier 3MF
+    - Sinon affiche un message de fin
+
+    Ne retourne rien.
+    """
+
+    # Lancement demandé ?
+    if launch_slicer and slicer_path and os.path.exists(slicer_path):
+        try:
+            time.sleep(0.2)  # petit délai pour éviter les conflits disque
+            subprocess.Popen(f'"{slicer_path}" "{fc_3mf}"', shell=True)
+        except Exception as e:
+            show_message(tr("error_title"), f"{tr('error_launch_slicer')} {e}")
+        return
+
+    # Si l’utilisateur n’a pas demandé le lancement
+    if not launch_slicer:
+        show_message(tr("info_title"), tr("info_done"))
+
+
+def run_extra_commands(extra_cmds):
+    """
+    Exécute les commandes externes définies par l’utilisateur.
+    Chaque entrée est un tuple : (checked, cmd, delay)
+
+    - checked : bool → exécuter ou non
+    - cmd : commande système
+    - delay : délai en secondes avant exécution
+
+    Ne retourne rien.
+    """
+
+    for checked, cmd, delay in extra_cmds:
+        if not checked:
+            continue
+
+        try:
+            if delay > 0:
+                time.sleep(delay)
+
+            subprocess.Popen(cmd)
+
+        except Exception as e:
+            show_message(tr("error_title"), f"{tr('error_external_cmd')} {e}")
+
+
 # -------------------------
 # Routine principale
 # -------------------------
@@ -1232,299 +1757,93 @@ def export_replace_geometry():
     # ------------------------------------------------------------
     # 1) Vérifications initiales
     # ------------------------------------------------------------
-    cfg = load_config()
-    doc = FreeCAD.ActiveDocument
-    if not doc:
-        show_message(tr("error_title"), tr("error_no_doc"))
+
+
+    env = prepare_environment()
+    if env is None:
         return
+    (cfg, doc, base_name, fc_3mf, old_3mf_backup, fc_3mf_existed_at_start) = env
 
-    fcstd_path = doc.FileName
-    if not fcstd_path:
-        show_message(tr("error_title"), tr("error_no_save"))
-        return
 
-    base_name = os.path.splitext(fcstd_path)[0]
-    fc_3mf = base_name + ".3mf"
-    old_3mf_backup = base_name + ".old.3mf"
 
-    # Mémorise si le .3mf existait AVANT l'export FreeCAD
-    fc_3mf_existed_at_start = os.path.exists(fc_3mf)
 
-    # Sauvegarde de l'ancien 3MF (seulement si le .3mf existait au départ)
-    if fc_3mf_existed_at_start:
-        shutil.move(fc_3mf, old_3mf_backup)
 
     # Vérification de la sélection
-    selection = [
-        obj for obj in FreeCADGui.Selection.getSelection()
-        if hasattr(obj, "Shape") and obj.Shape is not None
-    ]
-    if not selection:
-        show_message(tr("warn_title"), tr("warn_no_selection"))
-        if fc_3mf_existed_at_start and os.path.exists(old_3mf_backup) and not os.path.exists(fc_3mf):
-            shutil.move(old_3mf_backup, fc_3mf)
+
+    selection = get_valid_selection(fc_3mf, old_3mf_backup, fc_3mf_existed_at_start)
+    if selection is None:
         return
-    if len(selection) > 1:
-        show_message(tr("warn_title"), tr("warn_multi_selection"))
-        if fc_3mf_existed_at_start and os.path.exists(old_3mf_backup) and not os.path.exists(fc_3mf):
-            shutil.move(old_3mf_backup, fc_3mf)
-        return
+
+
+
+
 
     # ------------------------------------------------------------
     # 2) Préférences + boîte de dialogue
     # ------------------------------------------------------------
-    slicer_path_pref = cfg.get("slicer_exe", DEFAULT_SLICER_EXE)
-    linear_pref = cfg.get("linear_deflection", DEFAULT_LINEAR_DEFLECTION)
-    angular_pref = cfg.get("angular_deflection", DEFAULT_ANGULAR_DEFLECTION)
 
-    while True:
-        (keep_params, keep_positions, generate_stl,
-         slicer_path, launch_slicer,
-         linear_value, angular_value, extra_cmds) = ask_user_options(
-            slicer_path_pref, linear_pref, angular_pref
-        )
-
-        if slicer_path is None and launch_slicer is None:
-            show_message(tr("info_title"), tr("info_cancel"))
-            if fc_3mf_existed_at_start and os.path.exists(old_3mf_backup) and not os.path.exists(fc_3mf):
-                shutil.move(old_3mf_backup, fc_3mf)
-            return
-
-        if launch_slicer and slicer_path and not os.path.exists(slicer_path):
-            show_message(tr("error_title"), f"{tr('error_invalid_slicer')}\n{slicer_path}")
-            continue
-
-        break
-
-    save_settings(linear=linear_value, angular_rad=angular_value, slicer_path=slicer_path)
-
-    # ------------------------------------------------------------
-    # 3) Export FreeCAD → 3MF
-    # ------------------------------------------------------------
-    try:
-        export_selection_with_deflection(
-            selection, fc_3mf,
-            linear_deflection=linear_value,
-            angular_deflection=angular_value
-        )
-    except Exception as e:
-        show_message(tr("error_title"), f"{tr('error_export_3mf')} {e}")
+    opts = get_user_options(cfg)
+    if opts is None:
+        # Annulation → restauration éventuelle
         if fc_3mf_existed_at_start and os.path.exists(old_3mf_backup) and not os.path.exists(fc_3mf):
             shutil.move(old_3mf_backup, fc_3mf)
         return
 
-    if generate_stl:
-        try:
-            export_stl_with_deflection(
-                selection, base_name + ".stl",
-                linear_deflection=linear_value,
-                angular_deflection=angular_value
-            )
-        except Exception as e:
-            show_message(tr("error_title"), f"{tr('error_generate_stl')} {e}")
+    (keep_params, keep_positions, generate_stl,
+     slicer_path, launch_slicer,
+     linear_value, angular_value, extra_cmds) = opts
+
+
+
+
+    # ------------------------------------------------------------
+    # 3) Export FreeCAD → 3MF
+    # ------------------------------------------------------------
+    if not export_freecad_files(selection, base_name, fc_3mf, generate_stl,
+                                linear_value, angular_value,
+                                fc_3mf_existed_at_start, old_3mf_backup):
+        return
+
 
     # ------------------------------------------------------------
     # 4) TEST PLATEAU VIDE — AVANT injection
     # ------------------------------------------------------------
-    print("test plateau vide*******************")
+    if not handle_empty_plate(fc_3mf_existed_at_start, old_3mf_backup, fc_3mf):
+        return
 
-    # On ne teste le plateau vide QUE si un 3MF existait AVANT l’export FreeCAD
-    if fc_3mf_existed_at_start:
 
-        # À ce stade, old_3mf_backup = fichier du slicer (renommé juste avant)
-        if os.path.exists(old_3mf_backup) and not zip_contains_real_mesh(old_3mf_backup):
 
-            msg = (
-                "⚠️ Le fichier 3MF du slicer ne contient aucun objet.\n"
-                "Cela arrive souvent après une suppression dans le slicer.\n\n"
-                "Voulez-vous supprimer le fichier 3MF exporté par FreeCAD\n"
-                "et repartir comme pour un nouveau projet ?"
-            )
 
-            reply = QtGui.QMessageBox.question(
-                None,
-                tr("warn_title"),
-                msg,
-                QtGui.QMessageBox.Ok | QtGui.QMessageBox.Cancel
-            )
 
-            if reply == QtGui.QMessageBox.Ok:
-                try:
-                    os.remove(fc_3mf)
-                except Exception as e:
-                    print("⚠️ Impossible de supprimer le 3MF FreeCAD :", e)
 
-                print("🗑️ 3MF FreeCAD supprimé. Export interrompu.")
-                return
-
-            print("ℹ️ Export annulé (plateau vide).")
-            return
 
     # ------------------------------------------------------------
     # 5) Injection géométrie si ancien 3MF
     # ------------------------------------------------------------
+    inject_geometry_if_possible(
+        base_name, fc_3mf, old_3mf_backup, fc_3mf_existed_at_start,
+        slicer_path, keep_params, keep_positions
+    )
 
-    # Injection possible uniquement si :
-    # 1) un 3MF existait AVANT l’export FreeCAD
-    # 2) old_3mf_backup est un vrai fichier du slicer (pas un fichier FreeCAD brut)
-    is_slicer_file = os.path.exists(old_3mf_backup) and zip_contains_real_mesh(old_3mf_backup)
-    inject_possible = fc_3mf_existed_at_start and is_slicer_file
 
-    slicer_source = "unknown"
-    slicer_target = None
 
-    if inject_possible:
-        with zipfile.ZipFile(old_3mf_backup, "r") as zin:
-            if is_qidistudio(zin):
-                print("   🔎 Slicer détecté (source) : QidiStudio")
-                slicer_source = "qidistudio"
-            elif is_qidislicer(zin):
-                print("   🔎 Slicer détecté (source) : QidiSlicer")
-                slicer_source = "qidislicer"
-            elif is_slic3r_style(zin) and not is_qidislicer(zin):
-                print("   🔎 Slicer détecté (source) : Slic3r/Orca/Prusa")
-                slicer_source = "slic3r"
-                
-            elif is_cura(zin):
-                print("   🔎 Slicer détecté (source) : Cura")
-                slicer_source = "cura"
-                
-            else:
-                print("   🔎 Slicer détecté (source) : inconnu")
-                slicer_source = "unknown"
 
-        slicer_target = detect_slicer_target_from_path(slicer_path) if slicer_path else None
 
-        if slicer_target not in (None, "unknown") and slicer_source not in (None, "unknown") \
-           and slicer_source != slicer_target:
 
-            action = ask_incompatible_slicer_dialog(slicer_source, slicer_target)
 
-            if action == "cancel":
-                if os.path.exists(fc_3mf):
-                    os.remove(fc_3mf)
-                if fc_3mf_existed_at_start and os.path.exists(old_3mf_backup):
-                    shutil.move(old_3mf_backup, fc_3mf)
-                print("❌ Opération annulée par l’utilisateur (slicers incompatibles).")
-                return
-
-            if action == "delete":
-                print("🗑️ Suppression de l’ancien 3MF incompatible.")
-                try:
-                    os.remove(old_3mf_backup)
-                except Exception as e:
-                    print("⚠️ Impossible de supprimer l’ancien 3MF :", e)
-                inject_possible = False
-
-    if inject_possible and os.path.exists(old_3mf_backup):
-
-        cleaned_old_3mf = base_name + ".cleaned.3mf"
-        keep_model = None
-
-        if slicer_source == "qidistudio":
-            keep_object_id, keep_model = clean_multi_object_style(
-                old_3mf_backup, cleaned_old_3mf, mode="qidi"
-            )
-        elif slicer_source == "qidislicer":
-            clean_qidi_style(old_3mf_backup, cleaned_old_3mf)
-            keep_model = None
-        elif slicer_source == "slic3r":
-            keep_object_id, keep_model = clean_prusa_style(
-                old_3mf_backup,
-                cleaned_old_3mf
-            )
-        else:
-            shutil.copy(old_3mf_backup, cleaned_old_3mf)
-            keep_model = "3D/Objects/object_1.model"
-
-        old_3mf = cleaned_old_3mf
-
-        geom_entry = find_geom_file_in_3mf(fc_3mf)
-        if not geom_entry:
-            show_message(tr("error_title"), tr("error_no_geom"))
-            return
-
-        with zipfile.ZipFile(fc_3mf, 'r') as fc_zip:
-            geom_data = fc_zip.read(geom_entry)
-
-        geom_data_centered, zmax = recenter_vertices(geom_data)
-
-        tmp_new = base_name + ".new.3mf"
-
-        with zipfile.ZipFile(old_3mf, 'r') as old_zip, \
-             zipfile.ZipFile(tmp_new, 'w', compression=zipfile.ZIP_DEFLATED) as new_zip:
-
-            names = old_zip.namelist()
-            has_objects = any(n.startswith("3D/Objects/") for n in names)
-
-            for item in old_zip.infolist():
-                name = item.filename
-                data = old_zip.read(name)
-
-                if has_objects:
-                    if name == keep_model:
-                        new_zip.writestr(name, geom_data_centered)
-                        print(f"   ✅ Objet injecté : {keep_model}")
-                        continue
-
-                    elif name.startswith("3D/Objects/") and name.endswith(".model"):
-                        continue
-
-                    if name.endswith("3dmodel.model"):
-                        if keep_positions:
-                            data = force_zmax_in_transform(data, zmax)
-                        else:
-                            data = reset_item_transform(data, center=(CENTER_X, CENTER_Y, zmax))
-                        new_zip.writestr(name, data)
-                        continue
-
-                    if not keep_params and name.startswith("Metadata/"):
-                        continue
-
-                    new_zip.writestr(name, data)
-                    continue
-
-                else:
-                    new_zip.close()
-                    inject_geometry_into_qidi_3mf(old_3mf, tmp_new, geom_data_centered)
-                    break
-
-        if os.path.exists(fc_3mf):
-            os.remove(fc_3mf)
-        shutil.move(tmp_new, fc_3mf)
-
-        if os.path.exists(old_3mf):
-            os.remove(old_3mf)
-
-        print("✅ Export avec récupération des paramètres du slicer :", fc_3mf)
-
-    else:
-        print("✅ Fichier généré uniquement par FreeCAD :", fc_3mf)
 
     # ------------------------------------------------------------
     # 6) Lancement du slicer
     # ------------------------------------------------------------
-    if launch_slicer and slicer_path and os.path.exists(slicer_path):
-        try:
-            time.sleep(0.2)
-            subprocess.Popen(f'"{slicer_path}" "{fc_3mf}"', shell=True)
-        except Exception as e:
-            show_message(tr("error_title"), f"{tr('error_launch_slicer')} {e}")
-    else:
-        if not launch_slicer:
-            show_message(tr("info_title"), tr("info_done"))
+    launch_slicer_if_needed(slicer_path, launch_slicer, fc_3mf)
+
 
     # ------------------------------------------------------------
     # 7) Commandes externes
     # ------------------------------------------------------------
-    for checked, cmd, delay in extra_cmds:
-        if checked:
-            try:
-                if delay > 0:
-                    time.sleep(delay)
-                subprocess.Popen(cmd)
-            except Exception as e:
-                show_message(tr("error_title"), f"{tr('error_external_cmd')} {e}")
+    run_extra_commands(extra_cmds)
+
+
 
 
 export_replace_geometry()
