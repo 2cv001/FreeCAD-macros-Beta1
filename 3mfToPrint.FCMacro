@@ -517,7 +517,7 @@ def detect_slicer_target_from_path(path):
         return "qidislicer"
         
     # QidiStudio / Orca 
-    if any(x in p.lower() for x in ("qidistudio", "orca", "bambu")):
+    if any(x in p.lower() for x in ("qidistudio", "orca", "bambu", "creality")):
         return "qidistudio"
 
     # Prusa / Orca / Bambu / SuperSlicer
@@ -578,6 +578,7 @@ def analyse_fichier_3mf(file_path: str) -> Dict[str, Optional[str]]:
             "prusaslicer": "prusaslicer",
             "bambu": "qidistudio", ########### en fait orca est détecté comme bambu car signature bambu
             "orca": "qidistudio", ########### Car même traitement que qidistudio
+            "creality": "qidistudio",
             "cura": "cura",
             "freecad": "freecad",
         }
@@ -1808,12 +1809,9 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
     # ------------------------------------------------------------
     # 2) Détection du slicer source 
     # ------------------------------------------------------------
-    if os.path.exists(old_3mf_backup): ###############"" A retrirerle test et le else caer fait dans nameSlicer
-    
-    
-        slicer_source = nameSlicer(old_3mf_backup)
-        print ('1812 2) détection du slicer source slicer_source =', slicer_source)
-        
+    """
+    if os.path.exists(old_3mf_backup): ###############"" A retrirerle test et le else car  fait dans nameSlicer
+     
         
         if not os.path.exists(old_3mf_backup):
             print(' dans inject_geometry_into_qidi_3mf fichier src_3mf inexistant',old_3mf_backup)     
@@ -1842,8 +1840,9 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
         
     else:
         slicer_source = 'none'
+    """    
     slicer_source = nameSlicer(old_3mf_backup)
-    #slicer_source = 'qidistudio' ############################################################### A RERIRER UNIQUEMENT TEST 
+    print ('1845 2) détection du slicer source slicer_source =', slicer_source)
 
     # ------------------------------------------------------------
     # 3) Détection du slicer cible
