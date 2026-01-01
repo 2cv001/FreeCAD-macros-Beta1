@@ -1,5 +1,9 @@
 
 
+
+
+
+
 # -*- coding: utf-8 -*-
 """
 Macro FreeCAD multilingue : export 3MF/STL avec contrôle de tessellation,
@@ -50,7 +54,7 @@ from typing import Dict, Optional
 # Constantes et configuration
 # -------------------------
 INI_FILE = os.path.join(os.path.dirname(__file__), "3mfToPrint.ini")
-CENTER_X, CENTER_Y, CENTER_Z = 120, 120, 2.5
+PLATEAU_X, PLATEAU_Y, PLATEAU_Z = 240, 240, 2.5
 
 if platform.system() == "Windows":
     DEFAULT_SLICER_EXE = r"C:\Program Files\QIDIStudio\qidi-studio.exe"
@@ -525,8 +529,7 @@ def detect_slicer_target_from_path(path):
     if any(x in p for x in ("prusa", "super")):
         return "slic3r"
         
-        
-
+       
     # Cura
     if "cura" in p:
         return "cura"
@@ -707,151 +710,15 @@ def analyse_fichier_3mf(file_path: str) -> Dict[str, Optional[str]]:
                     result['logiciel'] = "freecad"
                 else:
                     result['logiciel'] = "unknown"
-    print('logicel trouvé dans analyse_fichier_3mf',result)
+
     return result
 
 
 
-
-
-
 def nameSlicer(File3mf: str):
-    print('File3mf',File3mf)
     result = analyse_fichier_3mf(File3mf)
     return result['logiciel']
 
-def is_qidistudio(zipin):
-    names = zipin.namelist()
-
-    # 1) Signature multi-objets QidiStudio
-    if any(n.startswith("3D/Objects/") and n.endswith(".model") for n in names):
-
-        # 2) Fichiers de configuration QidiStudio (ancien ou nouveau)
-        if "Metadata/model_settings.config" in names:
-            return True
-        if "Metadata/model_settings.json" in names:
-            return True
-
-        # 3) Analyse du 3dmodel.model
-        if "3D/3dmodel.model" in names:
-            try:
-                data = zipin.read("3D/3dmodel.model").decode("utf-8", "ignore").lower()
-
-                # Signatures QidiStudio
-                if "qidistudio" in data:
-                    return True
-                if "qidi" in data and "application" in data:
-                    return True
-
-                # Exclusion explicite Prusa/Slic3r
-                if "prusaslicer" in data or "slic3r" in data:
-                    return False
-
-            except:
-                pass
-
-    return False
-
-
-def is_qidislicer(zipin):
-    names = zipin.namelist()
-
-    # --- Signature moderne QidiSlicer (la seule fiable) ---
-    if "3D/3dmodel.model" in names:
-        try:
-            data = zipin.read("3D/3dmodel.model").decode("utf-8", "ignore").lower()
-            if "application" in data and "qidislicer" in data:
-                return True
-        except Exception as e:
-            print("⚠️ is_qidislicer: erreur lecture 3dmodel.model :", e)
-            return False
-
-    # --- Anciennes signatures QidiSlicer (versions Cura-like) ---
-    if "Metadata/plate.ini" in names:
-        return True
-    if "Metadata/print_settings.ini" in names and "Metadata/filament_settings.ini" in names:
-        return True
-
-    return False
-
-
-def is_slic3r_style(zipin):
-    """
-    Détection des 3MF style Slic3r/Prusa/Orca/SuperSlicer.
-    IMPORTANT :
-    - QidiSlicer 1.2.5 utilise des fichiers Slic3r_PE → NE PAS le classer ici.
-    """
-
-    names = zipin.namelist()
-
-    # --- Exclusion PRIORITAIRE : QidiSlicer ---
-    # (QidiSlicer moderne utilise des fichiers Slic3r_PE)
-    try:
-        if "3D/3dmodel.model" in names:
-            data = zipin.read("3D/3dmodel.model").decode("utf-8", "ignore").lower()
-            if "application" in data and "qidislicer" in data:
-                return False  # surtout pas Slic3r
-    except Exception as e:
-        print("⚠️ is_slic3r_style: erreur lecture 3dmodel.model :", e)
-
-    # --- 1) Signatures PrusaSlicer / Slic3r / SuperSlicer / Orca ---
-    if any("Slic3r_PE" in n for n in names):
-        return True
-    if "Metadata/Prusa_Slicer_wipe_tower_information.xml" in names:
-        return True
-
-    # Multi-objets Slic3r/Orca
-    if any(n.startswith("3D/Objects/") and n.endswith(".model") for n in names):
-        return True
-
-    # --- 2) Analyse du 3dmodel.model ---
-    if "3D/3dmodel.model" in names:
-        try:
-            data = zipin.read("3D/3dmodel.model").decode("utf-8", "ignore").lower()
-
-            if "prusaslicer" in data:
-                return True
-            if "slic3rpe" in data:
-                return True
-            if "slic3r" in data:
-                return True
-            if "superslicer" in data:
-                return True
-            if "orcaslicer" in data:
-                return True
-
-        except Exception as e:
-            print("⚠️ is_slic3r_style: erreur lecture 3dmodel.model :", e)
-
-    return False
-"""
-def is_curaOLD(zip_file):
-    names = zip_file.namelist()
-
-    # Cura a TOUJOURS un dossier Metadata/
-    if not any(n.startswith("Metadata/") for n in names):
-        return False
-
-    # Cura a TOUJOURS un dossier Thumbnails/
-    if not any(n.startswith("Thumbnails/") for n in names):
-        return False
-
-    # Cura n'a JAMAIS de structure Slic3r/Prusa
-    if any(n.startswith("3D/Objects/") for n in names):
-        return False
-
-    return True
-"""
-   
-def is_cura(File3mf):
-    print('is_curaFile3mf')
-    result = nameSlicer(File3mf) 
-    return result == 'cura'
-
-def is_freecad(File3mf):
-    result = nameSlicer(File3mf)
-    print('nameSlicer', result)
-    return result == 'freecad'
 
 
 def zip_contains_real_mesh(zip_path):
@@ -905,7 +772,7 @@ def find_geom_file_in_3mf(zip_path):
     return None
 
 # Réinitialise la transformation des items en les centrant sur un point donné
-def reset_item_transform(model_data, center=(CENTER_X, CENTER_Y, CENTER_Z)):
+def reset_item_transform(model_data, center=(PLATEAU_X, PLATEAU_Y, PLATEAU_Z)):
     text = model_data.decode("utf-8")
     new_transform = f'transform="1 0 0 0 1 0 0 0 1 {center[0]} {center[1]} {center[2]}"'
     text = re.sub(r'(<item[^>]*?)\s+transform="[^"]+"', r'\1 ' + new_transform, text)
@@ -989,7 +856,7 @@ def force_zmax_in_transform(model_data, zmax):
 
 
 # Recentre les sommets en XY et calcule le Zmax pour placement correct
-def recenter_vertices(model_data, slicer_target, slicer_source, fc_3mf_existed_at_start):
+def recenter_vertices(model_data, slicer_target, slicer_source, fc_3mf_existed_at_start, center_x = 0, center_y = 0, center_z = 0):
     """
     Recentrage des vertex en X/Y et calcul du Zmax pour placement correct sur le plateau.
     Retourne : (données XML modifiées, zmax)
@@ -1004,36 +871,35 @@ def recenter_vertices(model_data, slicer_target, slicer_source, fc_3mf_existed_a
         if not verts:
             # Aucun sommet trouvé → avertissement et retour inchangé
             show_message(tr("warn_title"), tr("warn_no_geom_vertices"))
-            return model_data, CENTER_Z
+            return model_data, PLATEAU_Z
 
         xs = [float(v.attrib["x"]) for v in verts]
         ys = [float(v.attrib["y"]) for v in verts]
         zs = [float(v.attrib["z"]) for v in verts]
-        centerx = 0
-        centery = 0
-        print('slicer_target',slicer_target)
-        print('slicer_source',slicer_source)
-        print('fc_3mf_existed_at_start',fc_3mf_existed_at_start)
+        #centerx = 0
+        #centery = 0
+
         """
         if slicer_target in ['cura'] and slicer_source in ['freecad']: ##################################"fc_3mf_existed_at_start
             centerx = CENTER_X
             centery = CENTER_Y  
-            print('center_x',centerx)
+            
         """
-
+        print('center_x',center_x)
+        print('center_y',center_y)
         # Calcul du centre XY et du Zmax
         xc, yc = (min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0
         zmax = max(zs)
 
         # Recentrage XY
         for v in verts:
-            v.attrib["x"] = str(float(v.attrib["x"]) - xc + centerx) 
-            v.attrib["y"] = str(float(v.attrib["y"]) - yc + centery)
+            v.attrib["x"] = str(float(v.attrib["x"]) - xc + center_x) 
+            v.attrib["y"] = str(float(v.attrib["y"]) - yc + center_y)
         return ET.tostring(root, encoding="utf-8", xml_declaration=False), zmax
 
     except Exception as e:
         print("⚠️ Erreur recentrage vertex :", e)
-        return model_data, CENTER_Z
+        return model_data, PLATEAU_Z
 
 def clean_qidi_style(src_3mf, dst_3mf):
     """
@@ -1780,18 +1646,114 @@ def handle_empty_plate(fc_3mf_existed_at_start, old_3mf_backup, fc_3mf):
         return False
 
 
+
+def recentrer_3mf_fichier(file_path, slicer_target, slicer_source, fc_3mf_existed_at_start, center_x, center_y, center_z):
+    """
+    Ouvre un fichier 3MF, recentre les sommets du fichier 3D/3dmodel.model
+    via recenter_vertices(), puis réécrit le 3MF modifié.
+
+    Retourne :
+        - True si OK
+        - False si erreur
+    """
+
+    if not os.path.exists(file_path):
+        print("❌ Fichier introuvable :", file_path)
+        return False
+
+    try:
+        # Lire le contenu du 3MF original
+        with zipfile.ZipFile(file_path, 'r') as zin:
+            # On stocke tout en mémoire
+            buffer = {name: zin.read(name) for name in zin.namelist()}
+
+        # Vérifier que le fichier 3D existe
+        if "3D/3dmodel.model" not in buffer:
+            print("❌ Pas de 3D/3dmodel.model dans le 3MF")
+            return False
+
+        # Appel de ta fonction existante
+        print('appel de recenter_vertices ')
+        new_model_data, zmax = recenter_vertices(
+            buffer["3D/3dmodel.model"],
+            slicer_target,
+            slicer_source,
+            fc_3mf_existed_at_start,
+            center_x, center_y, center_z
+        )
+
+        # Remplacer le contenu recentré
+        buffer["3D/3dmodel.model"] = new_model_data
+
+        # Réécriture du 3MF
+        with zipfile.ZipFile(file_path, 'w', zipfile.ZIP_DEFLATED) as zout:
+            for name, data in buffer.items():
+                zout.writestr(name, data)
+
+        print("✅ Recentrage terminé. Zmax =", zmax)
+        return True
+
+    except Exception as e:
+        print("❌ Erreur lors du recentrage 3MF :", e)
+        return False
+
+
+
 def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existed_at_start,
                                 slicer_path, keep_params, keep_positions):
     """
-    Injection géométrique :
-    - Détecte le slicer source (QidiStudio, QidiSlicer, Slic3r/Prusa/Orca, Cura)
-    - Vérifie compatibilité avec le slicer cible
-    - Nettoie le 3MF source selon le slicer
-    - Injecte la géométrie FreeCAD
-    - Reconstruit le 3MF final
+    Injection géométrique dans un fichier 3MF existant.
 
-    Ne retourne rien (effets sur fichiers).
+    Cette fonction :
+    - Détecte le slicer source (QidiStudio, QidiSlicer, Slic3r/Prusa/Orca, Cura, FreeCAD)
+    - Détermine le slicer cible à partir du chemin du slicer
+    - Vérifie la compatibilité source → cible (dialogue si conflit)
+    - Nettoie le 3MF source selon son slicer (Qidi, Prusa, Cura…)
+    - Extrait la géométrie FreeCAD et la recentre
+    - Injecte la géométrie dans le 3MF source nettoyé
+    - Reconstruit le 3MF final en conservant ou non :
+        * les paramètres du slicer (keep_params)
+        * les positions d’origine (keep_positions)
+    - Remplace le fichier 3MF final sur disque
+
+    Paramètres
+    ----------
+    base_name : str
+        Nom de base du fichier (sans extension). Sert à générer les fichiers
+        temporaires : .cleaned.3mf, .new.3mf, etc.
+
+    fc_3mf : str
+        Chemin du fichier 3MF généré par FreeCAD (celui qui contient la géométrie
+        à injecter dans le 3MF du slicer).
+
+    old_3mf_backup : str
+        Chemin du 3MF original du slicer (copie de sauvegarde avant injection).
+        C’est dans ce fichier que l’on récupère les paramètres, positions,
+        métadonnées, etc.
+
+    fc_3mf_existed_at_start : bool
+        Indique si un fichier 3MF FreeCAD existait déjà avant l’export.
+        Sert à déterminer si l’injection est possible ou si l’on doit faire
+        un export FreeCAD “pur”.
+
+    slicer_path : str
+        Chemin vers l’exécutable du slicer cible (QidiStudio, PrusaSlicer, Cura…).
+        Permet de déterminer automatiquement le slicer cible.
+
+    keep_params : bool
+        Si True : conserve les paramètres du slicer (Metadata/*).
+        Si False : supprime les paramètres du slicer pour repartir propre.
+
+    keep_positions : bool
+        Si True : conserve les positions d’origine des objets dans le 3MF.
+        Si False : réinitialise les transformations (placement centré).
+
+    Retour
+    ------
+    "" ou "cancel"
+        et effets directs sur les fichiers 3MF (remplacement du fichier final).
     """
+
 
     # ------------------------------------------------------------
     # 1) Vérifier si injection possible
@@ -1804,43 +1766,12 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
 
     if not inject_possible:
         print("✅ Fichier généré uniquement par FreeCAD :", fc_3mf)
-        return
+        return ""
 
     # ------------------------------------------------------------
     # 2) Détection du slicer source 
     # ------------------------------------------------------------
-    """
-    if os.path.exists(old_3mf_backup): ###############"" A retrirerle test et le else car  fait dans nameSlicer
-     
-        
-        if not os.path.exists(old_3mf_backup):
-            print(' dans inject_geometry_into_qidi_3mf fichier src_3mf inexistant',old_3mf_backup)     
-    
-        with zipfile.ZipFile(old_3mf_backup, "r") as zin:
-            if is_qidistudio(zin):
-                print("   🔎 Slicer détecté (source) : qidiStudio")
-                slicer_source = "qidistudio"
-            elif is_qidislicer(zin):
-                print("   🔎 Slicer détecté (source) : qidiSlicer")
-                slicer_source = "qidislicer"
-            elif is_slic3r_style(zin) and not is_qidislicer(zin):
-                print("   🔎 Slicer détecté (source) : slic3r/Orca/Prusa")
-                slicer_source = "slic3r"
-            #elif is_cura(zin):
-            elif is_cura(old_3mf_backup):
-                print("   🔎 Slicer détecté (source) : cura")
-                slicer_source = "cura"
-            elif is_freecad(old_3mf_backup):
-                print("   🔎 Slicer détecté (source) : freecad")
-                slicer_source = "freecad"    
-            else:
-                print("   🔎 Slicer détecté (source) : unknown")
-                slicer_source = "unknown"
-            print('A comparer avec ',slicer_source)
-        
-    else:
-        slicer_source = 'none'
-    """    
+   
     slicer_source = nameSlicer(old_3mf_backup)
     print ('1845 2) détection du slicer source slicer_source =', slicer_source)
 
@@ -1863,7 +1794,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
             if fc_3mf_existed_at_start and os.path.exists(old_3mf_backup):
                 shutil.move(old_3mf_backup, fc_3mf) ######################################## A REMPLACER PAR UN COPY ?
             print("❌ Opération annulée par l’utilisateur (slicers incompatibles).")
-            return
+            return "cancel"
 
         if action == "delete":
             print("🗑️ Suppression de l’ancien 3MF incompatible.")
@@ -1876,7 +1807,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
 
     if not inject_possible:
         print("⚠️ Injection impossible, export FreeCAD seul.")
-        return
+        return ""
 
     
     # ------------------------------------------------------------
@@ -1912,7 +1843,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
     geom_entry = find_geom_file_in_3mf(fc_3mf)
     if not geom_entry:
         show_message(tr("error_title"), tr("error_no_geom"))
-        return
+        return ""
         
     if not os.path.exists(fc_3mf):
             print(' dans inject_geometry_into_qidi_3mf fichier src_3mf inexistant',fc_3mf)  
@@ -1955,7 +1886,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
                     if keep_positions:
                         data = force_zmax_in_transform(data, zmax)
                     else:
-                        data = reset_item_transform(data, center=(CENTER_X, CENTER_Y, zmax))
+                        data = reset_item_transform(data, center=(PLATEAU_X, PLATEAU_Y, zmax))
                     new_zip.writestr(name, data)
                     continue
 
@@ -2113,12 +2044,13 @@ def export_replace_geometry():
     """    
     #if not fc_3mf_existed_at_start and slicer_target in ["cura"]:
 
+    """
     if slicer_source in ['noFile', 'freecad'] and slicer_target in ["cura"]:
            show_message( "premier lancement", 
                 f"Le slicer {slicer_target} ne recentre pas les objets. Dans {slicer_target}" 
                 " dézoomez pour pouvoir le recentrer sur le plateau."
 )
-
+    """
 
     # ------------------------------------------------------------
     # 3) Export FreeCAD → 3MF
@@ -2132,10 +2064,22 @@ def export_replace_geometry():
     # ------------------------------------------------------------
     # 5) Injection géométrie si ancien 3MF
     # ------------------------------------------------------------
-    inject_geometry_if_possible(
+    
+    
+
+    
+    if inject_geometry_if_possible(
         base_name, fc_3mf, old_3mf_backup, fc_3mf_existed_at_start,
         slicer_path, keep_params, keep_positions
-    )
+    ) == 'cancel' :
+        return
+    
+
+    
+    if slicer_target in ['cura'] and slicer_source != slicer_target:
+        print('recentrage demandé car cura en cible mais pas en source')
+        recentrer_3mf_fichier(fc_3mf, slicer_target, slicer_source, fc_3mf_existed_at_start,
+            PLATEAU_X/2, PLATEAU_Y/2, PLATEAU_Z)
     
 
     # ------------------------------------------------------------
