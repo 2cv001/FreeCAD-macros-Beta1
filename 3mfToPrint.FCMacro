@@ -1,9 +1,5 @@
 
 
-
-
-
-
 # -*- coding: utf-8 -*-
 """
 Macro FreeCAD multilingue : export 3MF/STL avec contrôle de tessellation,
@@ -54,7 +50,7 @@ from typing import Dict, Optional
 # Constantes et configuration
 # -------------------------
 INI_FILE = os.path.join(os.path.dirname(__file__), "3mfToPrint.ini")
-PLATEAU_X, PLATEAU_Y, PLATEAU_Z = 240, 240, 2.5
+PLATEAU_X, PLATEAU_Y, PLATEAU_Z = 240, 240, 0
 
 if platform.system() == "Windows":
     DEFAULT_SLICER_EXE = r"C:\Program Files\QIDIStudio\qidi-studio.exe"
@@ -73,10 +69,7 @@ EXTRA_COMMANDS = [
     #  "http://IpDeLaPriseShelly/rpc/Switch.Set?id=0&on=true"],
     #  "Allumer la prise Shelly Gen2 ?", 0, False),
 ]
-
-
-     
-     
+   
 
 # Charge les commandes externes définies dans le fichier ini
 def load_extra_commands_from_ini(path=INI_FILE):
@@ -538,9 +531,6 @@ def detect_slicer_target_from_path(path):
 
 
 
-
-
-
 # ------------------------------------------------------------
 # Analyse du fichier 3MF (nb objets et slicer)
 # ------------------------------------------------------------
@@ -558,8 +548,8 @@ def analyse_fichier_3mf(file_path: str) -> Dict[str, Optional[str]]:
     
     if not os.path.exists(file_path):
         result = {
-        'nombre_objets': 'noFile',
-        'logiciel': 'noFile'
+        'nombre_objets': 'nofile',
+        'logiciel': 'nofile'
             }
         print ('analyse_fichier_3mf : pas de fichier', file_path)
         return result   
@@ -578,7 +568,7 @@ def analyse_fichier_3mf(file_path: str) -> Dict[str, Optional[str]]:
         MAPPINGS = {
             "qidistudio": "qidistudio",
             "qidislicer": "qidislicer",
-            "prusaslicer": "prusaslicer",
+            "prusaslicer": "slic3r",
             "bambu": "qidistudio", ########### en fait orca est détecté comme bambu car signature bambu
             "orca": "qidistudio", ########### Car même traitement que qidistudio
             "creality": "qidistudio",
@@ -771,12 +761,9 @@ def find_geom_file_in_3mf(zip_path):
             return "3D/3dmodel.model"
     return None
 
-# Réinitialise la transformation des items en les centrant sur un point donné
-def reset_item_transform(model_data, center=(PLATEAU_X, PLATEAU_Y, PLATEAU_Z)):
-    text = model_data.decode("utf-8")
-    new_transform = f'transform="1 0 0 0 1 0 0 0 1 {center[0]} {center[1]} {center[2]}"'
-    text = re.sub(r'(<item[^>]*?)\s+transform="[^"]+"', r'\1 ' + new_transform, text)
-    return text.encode("utf-8")
+
+
+
 
 # Exporte une sélection en STL avec paramètres de tessellation    
 def export_stl_with_deflection(selection, stl_path,
@@ -827,79 +814,33 @@ def export_selection_with_deflection(selection, out_3mf_path,
 
 
 # Force uniquement la composante Z des transformations dans le modèle 3MF
-def force_zmax_in_transform(model_data, zmax):
+def force_zmax_in_transform(model_data, decalz):
     """
     Remplace uniquement la composante Z (12e valeur) du transform des <item> dans 3dmodel.model.
     - Conserve X/Y et la matrice de rotation/échelle.
-    - zmax est un float (hauteur max des vertex) calculé par recenter_vertices.
+    - decalz (hauteur max des vertex) calculé par recenter_vertices.
 
     Si plusieurs <item> existent, on les met tous à jour.
     """
-    try:
-        text = model_data.decode("utf-8")
+    #decalz = 1000 ###############################################A RETIRER
+    #print('829 decalz forcé à 1000 pour test. A retirer')
+    text = model_data.decode("utf-8")
 
-        def repl(m):
-            nums = m.group(1).split()
-            # transform = 12 nombres : 9 pour la matrice, 3 pour la translation (X, Y, Z)
-            if len(nums) == 12:
-                nums[-1] = f"{zmax}"
-                return 'transform="' + " ".join(nums) + '"'
-            # Si format inattendu, on ne modifie pas
-            return m.group(0)
+    def repl(m):
+        nums = m.group(1).split()
+        # transform = 12 nombres : 9 pour la matrice, 3 pour la translation (X, Y, Z)
+        if len(nums) == 12:
+            nums[-1] = f"{decalz}"
+            return 'transform="' + " ".join(nums) + '"'
+        # Si format inattendu, on ne modifie pas
+        return m.group(0)
 
-        # Met à jour tous les transform="..."; count=0 = sans limite
-        text = re.sub(r'transform="([^"]+)"', repl, text, count=0)
-        return text.encode("utf-8")
-    except Exception as e:
-        print("⚠️ force_zmax_in_transform: échec, on garde le transform d'origine :", e)
-        return model_data
+    # Met à jour tous les transform="..."; count=0 = sans limite
+    text = re.sub(r'transform="([^"]+)"', repl, text, count=0)
+    return text.encode("utf-8")
 
 
-# Recentre les sommets en XY et calcule le Zmax pour placement correct
-def recenter_vertices(model_data, slicer_target, slicer_source, fc_3mf_existed_at_start, center_x = 0, center_y = 0, center_z = 0):
-    """
-    Recentrage des vertex en X/Y et calcul du Zmax pour placement correct sur le plateau.
-    Retourne : (données XML modifiées, zmax)
-    """
-    try:
-        print('Recentrage des vertex en X/Y et calcul du Zmax pour placement correct sur le plateau')
-        ET.register_namespace('', "http://schemas.microsoft.com/3dmanufacturing/core/2015/02")
-        root = ET.fromstring(model_data.decode("utf-8"))
-        ns = {"ns": "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"}
-        verts = root.findall(".//ns:vertex", ns)
 
-        if not verts:
-            # Aucun sommet trouvé → avertissement et retour inchangé
-            show_message(tr("warn_title"), tr("warn_no_geom_vertices"))
-            return model_data, PLATEAU_Z
-
-        xs = [float(v.attrib["x"]) for v in verts]
-        ys = [float(v.attrib["y"]) for v in verts]
-        zs = [float(v.attrib["z"]) for v in verts]
-        #centerx = 0
-        #centery = 0
-
-        """
-        if slicer_target in ['cura'] and slicer_source in ['freecad']: ##################################"fc_3mf_existed_at_start
-            centerx = CENTER_X
-            centery = CENTER_Y  
-            
-        """
-        print('center_x',center_x)
-        print('center_y',center_y)
-        # Calcul du centre XY et du Zmax
-        xc, yc = (min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0
-        zmax = max(zs)
-
-        # Recentrage XY
-        for v in verts:
-            v.attrib["x"] = str(float(v.attrib["x"]) - xc + center_x) 
-            v.attrib["y"] = str(float(v.attrib["y"]) - yc + center_y)
-        return ET.tostring(root, encoding="utf-8", xml_declaration=False), zmax
-
-    except Exception as e:
-        print("⚠️ Erreur recentrage vertex :", e)
-        return model_data, PLATEAU_Z
 
 def clean_qidi_style(src_3mf, dst_3mf):
     """
@@ -1647,7 +1588,60 @@ def handle_empty_plate(fc_3mf_existed_at_start, old_3mf_backup, fc_3mf):
 
 
 
-def recentrer_3mf_fichier(file_path, slicer_target, slicer_source, fc_3mf_existed_at_start, center_x, center_y, center_z):
+# Réinitialise la transformation des items en les centrant sur un point donné
+def reset_item_transform(model_data, center=(PLATEAU_X, PLATEAU_Y, PLATEAU_Z)):
+    print('1593 début reset_item_transform')
+    text = model_data.decode("utf-8")
+    new_transform = f'transform="1 0 0 0 1 0 0 0 1 {center[0]} {center[1]} {center[2]}"'
+    text = re.sub(r'(<item[^>]*?)\s+transform="[^"]+"', r'\1 ' + new_transform, text)
+    return text.encode("utf-8")
+
+
+
+# Recentre les sommets en XY et calcule le decal_z pour placement correct
+def recenter_vertices(model_data, slicer_target, slicer_source, fc_3mf_existed_at_start, center_x = 0, center_y = 0):
+    """
+    Recentrage des vertex en X/Y et calcul du Zmax pour placement correct sur le plateau.
+    Retourne : (données XML modifiées, zmax)
+    """
+    try:
+        print('1608 début recenter_vertices : Recentrage des vertex en X/Y et calcul du decal_z ')
+        ET.register_namespace('', "http://schemas.microsoft.com/3dmanufacturing/core/2015/02")
+        root = ET.fromstring(model_data.decode("utf-8"))
+        ns = {"ns": "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"}
+        verts = root.findall(".//ns:vertex", ns)
+
+        if not verts:
+            # Aucun sommet trouvé → avertissement et retour inchangé
+            show_message(tr("warn_title"), tr("warn_no_geom_vertices"))
+            return model_data, PLATEAU_Z
+
+        xs = [float(v.attrib["x"]) for v in verts]
+        ys = [float(v.attrib["y"]) for v in verts]
+        zs = [float(v.attrib["z"]) for v in verts]
+
+        print('center_x',center_x)
+        print('center_y',center_y)
+        # Calcul du centre XY et du décalage en z
+        xc, yc = (min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0
+        decal_z = -1*min(zs) 
+
+            
+        print('1636 application d un decal_z de', decal_z)
+
+        # Recentrage XY
+        for v in verts:
+            v.attrib["x"] = str(float(v.attrib["x"]) - xc + center_x) 
+            v.attrib["y"] = str(float(v.attrib["y"]) - yc + center_y)
+            v.attrib["z"] = str(float(v.attrib["z"]) + decal_z)
+        return ET.tostring(root, encoding="utf-8", xml_declaration=False), decal_z
+
+    except Exception as e:
+        print("⚠️ Erreur dans recenter_vertices :", e)
+        return model_data, decal_z
+
+
+def recentrer_3mf_fichier(file_path, slicer_target, slicer_source, fc_3mf_existed_at_start, center_x, center_y):
     """
     Ouvre un fichier 3MF, recentre les sommets du fichier 3D/3dmodel.model
     via recenter_vertices(), puis réécrit le 3MF modifié.
@@ -1656,46 +1650,43 @@ def recentrer_3mf_fichier(file_path, slicer_target, slicer_source, fc_3mf_existe
         - True si OK
         - False si erreur
     """
-
+    print('1653 début recentrer_3mf_fichier')
     if not os.path.exists(file_path):
         print("❌ Fichier introuvable :", file_path)
         return False
 
-    try:
-        # Lire le contenu du 3MF original
-        with zipfile.ZipFile(file_path, 'r') as zin:
-            # On stocke tout en mémoire
-            buffer = {name: zin.read(name) for name in zin.namelist()}
 
-        # Vérifier que le fichier 3D existe
-        if "3D/3dmodel.model" not in buffer:
-            print("❌ Pas de 3D/3dmodel.model dans le 3MF")
-            return False
+    # Lire le contenu du 3MF original
+    with zipfile.ZipFile(file_path, 'r') as zin:
+        # On stocke tout en mémoire
+        buffer = {name: zin.read(name) for name in zin.namelist()}
 
-        # Appel de ta fonction existante
-        print('appel de recenter_vertices ')
-        new_model_data, zmax = recenter_vertices(
-            buffer["3D/3dmodel.model"],
-            slicer_target,
-            slicer_source,
-            fc_3mf_existed_at_start,
-            center_x, center_y, center_z
-        )
-
-        # Remplacer le contenu recentré
-        buffer["3D/3dmodel.model"] = new_model_data
-
-        # Réécriture du 3MF
-        with zipfile.ZipFile(file_path, 'w', zipfile.ZIP_DEFLATED) as zout:
-            for name, data in buffer.items():
-                zout.writestr(name, data)
-
-        print("✅ Recentrage terminé. Zmax =", zmax)
-        return True
-
-    except Exception as e:
-        print("❌ Erreur lors du recentrage 3MF :", e)
+    # Vérifier que le fichier 3D existe
+    if "3D/3dmodel.model" not in buffer:
+        print("❌ Pas de 3D/3dmodel.model dans le 3MF")
         return False
+
+    # Appel de ta fonction existante
+    print('appel de recenter_vertices ')
+    new_model_data, decal_z = recenter_vertices(
+        buffer["3D/3dmodel.model"],
+        slicer_target,
+        slicer_source,
+        fc_3mf_existed_at_start,
+        center_x, center_y
+    )
+
+    # Remplacer le contenu recentré
+    buffer["3D/3dmodel.model"] = new_model_data
+
+    # Réécriture du 3MF
+    with zipfile.ZipFile(file_path, 'w', zipfile.ZIP_DEFLATED) as zout:
+        for name, data in buffer.items():
+            zout.writestr(name, data)
+
+    print("✅ Recentrage terminé. decal_z =", decal_z)
+    return True
+
 
 
 
@@ -1851,57 +1842,59 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
     with zipfile.ZipFile(fc_3mf, 'r') as fc_zip:
         geom_data = fc_zip.read(geom_entry)
 
-    geom_data_centered, zmax = recenter_vertices(geom_data, slicer_target, slicer_source, fc_3mf_existed_at_start)
+    geom_data_centered, decal_z = recenter_vertices(geom_data, slicer_target, slicer_source, fc_3mf_existed_at_start)
 
     # ------------------------------------------------------------
     # 7) Reconstruction du 3MF final
     # ------------------------------------------------------------
     tmp_new = base_name + ".new.3mf"
+    if os.path.exists(old_3mf):
+        with zipfile.ZipFile(old_3mf, 'r') as old_zip, \
+             zipfile.ZipFile(tmp_new, 'w', compression=zipfile.ZIP_DEFLATED) as new_zip:
 
-    with zipfile.ZipFile(old_3mf, 'r') as old_zip, \
-         zipfile.ZipFile(tmp_new, 'w', compression=zipfile.ZIP_DEFLATED) as new_zip:
+            names = old_zip.namelist()
+            has_objects = any(n.startswith("3D/Objects/") for n in names)
 
-        names = old_zip.namelist()
-        has_objects = any(n.startswith("3D/Objects/") for n in names)
+            for item in old_zip.infolist():
+                name = item.filename
+                data = old_zip.read(name)
 
-        for item in old_zip.infolist():
-            name = item.filename
-            data = old_zip.read(name)
+                # Cas multi-objets
+                if has_objects:
 
-            # Cas multi-objets
-            if has_objects:
+                    # Remplacement du modèle principal
+                    if name == keep_model:
+                        new_zip.writestr(name, geom_data_centered)
+                        print(f"   ✅ Objet injecté : {keep_model}")
+                        continue
 
-                # Remplacement du modèle principal
-                if name == keep_model:
-                    new_zip.writestr(name, geom_data_centered)
-                    print(f"   ✅ Objet injecté : {keep_model}")
-                    continue
+                    # Suppression des autres objets
+                    elif name.startswith("3D/Objects/") and name.endswith(".model"):
+                        continue
 
-                # Suppression des autres objets
-                elif name.startswith("3D/Objects/") and name.endswith(".model"):
-                    continue
+                    # Transformations
+                    if name.endswith("3dmodel.model"):
+                        if keep_positions:
+                            data = force_zmax_in_transform(data, decal_z)
+                        else:
+                            data = reset_item_transform(data, center=(PLATEAU_X, PLATEAU_Y, zmax))
+                        new_zip.writestr(name, data)
+                        continue
 
-                # Transformations
-                if name.endswith("3dmodel.model"):
-                    if keep_positions:
-                        data = force_zmax_in_transform(data, zmax)
-                    else:
-                        data = reset_item_transform(data, center=(PLATEAU_X, PLATEAU_Y, zmax))
+                    # Métadonnées
+                    if not keep_params and name.startswith("Metadata/"):
+                        continue
+
                     new_zip.writestr(name, data)
                     continue
 
-                # Métadonnées
-                if not keep_params and name.startswith("Metadata/"):
-                    continue
-
-                new_zip.writestr(name, data)
-                continue
-
-            # Cas Qidi mono-objet
-            else:
-                new_zip.close()
-                inject_geometry_into_qidi_3mf(old_3mf, tmp_new, geom_data_centered)
-                break
+                # Cas Qidi mono-objet
+                else:
+                    new_zip.close()
+                    inject_geometry_into_qidi_3mf(old_3mf, tmp_new, geom_data_centered)
+                    break
+    else:
+        print('1892 fichier old non trouvé.')
 
     # ------------------------------------------------------------
     # 8) Remplacement du fichier final
@@ -1981,7 +1974,6 @@ def export_replace_geometry():
     # 1) Vérifications initiales
     # ------------------------------------------------------------
 
-
     env = prepare_environment()
     if env is None:
         return
@@ -2000,8 +1992,11 @@ def export_replace_geometry():
     
     if opts is None:
         # Annulation → restauration éventuelle ##############################"" A RETIRER ne laisser que le return
-        print('export_replace_geometry dans 2)', ' move de old vers fc_3mf')
-        shutil.move(old_3mf_backup, fc_3mf)
+        if os.path.exists('old_3mf_backup'):
+            print('export_replace_geometry dans 2)', ' move de old vers fc_3mf')
+            shutil.move(old_3mf_backup, fc_3mf)
+        else:
+            print("1992 shutil.moveold_3mf_backup, fc_3mf non possible old_3mf_backup n'existe pas")
         return
 
     (keep_params, keep_positions, generate_stl,
@@ -2014,7 +2009,6 @@ def export_replace_geometry():
     #------------------------------------------------------------
     # récup slice source
     #--------------------------------------------------------------
-    
     
     slicer_source = nameSlicer(fc_3mf) #######################################################################
     print ('==============slicer_source', slicer_source)
@@ -2030,9 +2024,6 @@ def export_replace_geometry():
     #------------------------------------------------------------
     # préparation de l'environnement suite après boite de dialogue
     #--------------------------------------------------------------
-
-
-
     #copie du 3mf en old = Sauvegarde de l'ancien 3MF (seulement si le .3mf existait au départ)
     #Suite à ça l e3mf n'existe plus.
     if fc_3mf_existed_at_start:
@@ -2045,7 +2036,7 @@ def export_replace_geometry():
     #if not fc_3mf_existed_at_start and slicer_target in ["cura"]:
 
     """
-    if slicer_source in ['noFile', 'freecad'] and slicer_target in ["cura"]:
+    if slicer_source in ['nofile', 'freecad'] and slicer_target in ["cura"]:
            show_message( "premier lancement", 
                 f"Le slicer {slicer_target} ne recentre pas les objets. Dans {slicer_target}" 
                 " dézoomez pour pouvoir le recentrer sur le plateau."
@@ -2064,22 +2055,18 @@ def export_replace_geometry():
     # ------------------------------------------------------------
     # 5) Injection géométrie si ancien 3MF
     # ------------------------------------------------------------
-    
-    
-
-    
+      
     if inject_geometry_if_possible(
         base_name, fc_3mf, old_3mf_backup, fc_3mf_existed_at_start,
         slicer_path, keep_params, keep_positions
     ) == 'cancel' :
         return
-    
-
-    
-    if slicer_target in ['cura'] and slicer_source != slicer_target:
+    print('slicer_source',slicer_source)
+    print('slicer_target',slicer_target)        
+    if slicer_target in ['cura'] and slicer_source not in ['cura']:
         print('recentrage demandé car cura en cible mais pas en source')
         recentrer_3mf_fichier(fc_3mf, slicer_target, slicer_source, fc_3mf_existed_at_start,
-            PLATEAU_X/2, PLATEAU_Y/2, PLATEAU_Z)
+            PLATEAU_X/2, PLATEAU_Y/2)
     
 
     # ------------------------------------------------------------
