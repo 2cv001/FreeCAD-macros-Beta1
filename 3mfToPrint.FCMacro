@@ -657,11 +657,14 @@ def analyse_fichier_3mf(file_path: str) -> Dict[str, Optional[str]]:
             if not logiciel_trouve:
                 # 1) métadonnées AVEC namespace
                 metas = root.findall('.//m:metadata', ns)
-
                 # 2) métadonnées SANS namespace
                 metas += root.findall('.//metadata')
                 for meta in metas:
-                    name = meta.get('name', '').lower()
+                    name = meta.get('name', '').lower()                     
+                   # Ignorer le metadata ajouté par la macro 
+                    if name == "cura:drop_to_buildplate": 
+                        continue                
+                                 
                     if name.startswith("cura:"):
                         result['logiciel'] = "cura"
                         logiciel_trouve = True
@@ -838,8 +841,6 @@ def force_zmax_in_transform(model_data, decalz):
     # Met à jour tous les transform="..."; count=0 = sans limite
     text = re.sub(r'transform="([^"]+)"', repl, text, count=0)
     return text.encode("utf-8")
-
-
 
 
 def clean_qidi_style(src_3mf, dst_3mf):
@@ -1588,6 +1589,87 @@ def handle_empty_plate(fc_3mf_existed_at_start, old_3mf_backup, fc_3mf):
 
 
 
+def ensure_cura_drop_to_buildplate(model_data):
+    """
+    Ajoute ou force <metadata name="cura:drop_to_buildplate">True</metadata>
+    dans <object>, placé AVANT <mesh> pour respecter Cura.
+    """
+    print('1596 ensure_cura_drop_to_buildplate pour ajouter ou modiifer',
+        '<metadata name="cura:drop_to_buildplate">True</metadata>')
+    NS = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
+    ET.register_namespace('', NS)
+    ns = {"ns": NS}
+
+    root = ET.fromstring(model_data.decode("utf-8"))
+
+    # Trouver le premier <object>
+    obj = root.find(".//ns:object", ns)
+    if obj is None:
+        return model_data
+
+    # Trouver <mesh>
+    mesh = obj.find("ns:mesh", ns)
+
+    # Trouver <metadatagroup>
+    md_group = obj.find("ns:metadatagroup", ns)
+
+    # --- CAS 1 : metadatagroup existe mais est mal placé → on le déplace ---
+    if md_group is not None:
+        # S'il est après <mesh>, on le déplace
+        children = list(obj)
+        md_index = children.index(md_group)
+        if mesh is not None:
+            mesh_index = children.index(mesh)
+            if md_index > mesh_index:
+                # Retirer et réinsérer avant mesh
+                obj.remove(md_group)
+                obj.insert(mesh_index, md_group)
+
+    # --- CAS 2 : metadatagroup n'existe pas → on le crée ---
+    else:
+        md_group = ET.Element(f"{{{NS}}}metadatagroup")
+        if mesh is not None:
+            index = list(obj).index(mesh)
+            obj.insert(index, md_group)
+        else:
+            obj.insert(0, md_group)
+
+    # --- Ajouter ou corriger le metadata ---
+    md = md_group.find("ns:metadata[@name='cura:drop_to_buildplate']", ns)
+    if md is None:
+        md = ET.SubElement(md_group, f"{{{NS}}}metadata")
+        md.set("name", "cura:drop_to_buildplate")
+
+    md.text = "True"
+
+    return ET.tostring(root, encoding="utf-8", xml_declaration=False)
+
+
+
+def patch_drop_to_buildplate_in_place(path):
+    print('Mise à plat pour le slicer')
+    tmp = path + ".tmp"
+
+    # Lire
+    with zipfile.ZipFile(path, 'r') as zin:
+        buffer = {name: zin.read(name) for name in zin.namelist()}
+
+    # Modifier
+    if "3D/3dmodel.model" in buffer:
+        buffer["3D/3dmodel.model"] = ensure_cura_drop_to_buildplate(
+            buffer["3D/3dmodel.model"]
+        )
+
+    # Écrire dans un fichier temporaire
+    with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as zout:
+        for name, data in buffer.items():
+            zout.writestr(name, data)
+
+    # Remplacer l’original
+    shutil.move(tmp, path)
+
+
+
 # Réinitialise la transformation des items en les centrant sur un point donné
 def reset_item_transform(model_data, center=(PLATEAU_X, PLATEAU_Y, PLATEAU_Z)):
     print('1593 début reset_item_transform')
@@ -2067,8 +2149,11 @@ def export_replace_geometry():
         print('recentrage demandé car cura en cible mais pas en source')
         recentrer_3mf_fichier(fc_3mf, slicer_target, slicer_source, fc_3mf_existed_at_start,
             PLATEAU_X/2, PLATEAU_Y/2)
-    
-
+            
+    if slicer_target in ['cura']:
+        #Ajout d'une directive pour que cura plaque l'ojjet sur le plateau.
+        #Et du coup on doit pouvoir retirer le cacul du décalage en z
+        patch_drop_to_buildplate_in_place(fc_3mf)
     # ------------------------------------------------------------
     # 6) Lancement du slicer
     # ------------------------------------------------------------
