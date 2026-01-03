@@ -51,7 +51,7 @@ from typing import Dict, Optional
 # -------------------------
 INI_FILE = os.path.join(os.path.dirname(__file__), "3mfToPrint.ini")
 PLATEAU_X, PLATEAU_Y, PLATEAU_Z = 240, 240, 0
-DEBUG=False
+DEBUG=True
 
 if platform.system() == "Windows":
     DEFAULT_SLICER_EXE = r"C:\Program Files\QIDIStudio\qidi-studio.exe"
@@ -152,6 +152,13 @@ TRANSLATIONS = {
         "info_done": "✅ Export terminé. Le slicer n'a pas été lancé (option décochée).",
         "info_export_fc": "✅ Fichier généré uniquement par FreeCAD :",
         "info_export_slicer": "✅ Export avec récupération des paramètres du slicer :",
+        "reset_all": "Repartir de zéro (ne rien conserver)",
+        "hint_reset_all": "Supprime le fichier 3MF existant et relance la macro pour repartir d’un fichier vierge.",
+        "reset_title": "Réinitialisation",
+        "reset_message": "Le fichier 3MF existant a été supprimé.\nLa macro va redémarrer pour repartir d’un fichier vierge.",
+
+
+
         
 
         # Aides / tooltips
@@ -231,6 +238,12 @@ TRANSLATIONS = {
         "info_done": "✅ Export finished. Slicer was not launched (option unchecked).",
         "info_export_fc": "✅ File generated only by FreeCAD:",
         "info_export_slicer": "✅ Export with slicer settings recovered:",
+        "reset_all": "Start from scratch (discard everything)",
+        "hint_reset_all": "Deletes the existing 3MF file and restarts the macro with a fresh empty project.",
+        "reset_title": "Reset",
+        "reset_message": "The existing 3MF file has been deleted.\nThe macro will restart with a fresh empty project.",
+
+
 
         # Tooltips
         "hint_linear": "Smaller value = finer mesh.\nExample: 0.01 = high quality but heavy file.\n"
@@ -377,6 +390,7 @@ def ask_user_options(current_slicer, current_linear, current_angular):
     layout = QtGui.QVBoxLayout()
 
     # Cases principales
+    """
     chk_params = QtGui.QCheckBox(tr("keep_params"))
     chk_params.setToolTip(tr("hint_keep_params"))
     chk_params.setChecked(True)
@@ -386,10 +400,18 @@ def ask_user_options(current_slicer, current_linear, current_angular):
     chk_positions.setToolTip(tr("hint_positions"))
     chk_positions.setChecked(True)
     layout.addWidget(chk_positions)
+    """
 
     chk_stl = QtGui.QCheckBox(tr("generate_stl"))
     chk_stl.setToolTip(tr("hint_generate_stl"))
     chk_stl.setChecked(False)
+    
+    # Nouvelle case : repartir de zéro
+    chk_reset = QtGui.QCheckBox(tr("reset_all"))
+    chk_reset.setToolTip(tr("hint_reset_all"))
+    chk_reset.setChecked(False)
+    layout.addWidget(chk_reset)
+
     layout.addWidget(chk_stl)
 
     # Ligne combinée : case "Lancer le slicer" + champ chemin
@@ -484,17 +506,21 @@ def ask_user_options(current_slicer, current_linear, current_angular):
         angular_deg = float(spin_ang.value())
         angular_rad = angular_deg * math.pi / 180.0
         return (
-            chk_params.isChecked(),
-            chk_positions.isChecked(),
+            True,                     # keep_params (supprimé de l’UI)
+            True,                     # keep_positions (supprimé de l’UI)
             chk_stl.isChecked(),
             edit_slicer.text(),
             chk_launch.isChecked(),
             linear_val,
             angular_rad,
+            chk_reset.isChecked(),
             [(chk.isChecked(), cmd, delay) for chk, cmd, delay in extra_checks]
         )
+
+
     else:
-        return (None, None, None, None, None, None, None, [])
+        return (None, None, None, None, None, None, None, None, [])
+
 
 # -------------------------
 # Fonctions de traitement 3MF / mesh
@@ -1472,9 +1498,11 @@ def get_user_options(cfg):
         # Appel de la boîte de dialogue utilisateur
         (keep_params, keep_positions, generate_stl,
          slicer_path, launch_slicer,
-         linear_value, angular_value, extra_cmds) = ask_user_options(
+         linear_value, angular_value, reset_all, extra_cmds) = ask_user_options(
             slicer_path_pref, linear_pref, angular_pref
         )
+
+
 
         # Annulation
         if slicer_path is None and launch_slicer is None:
@@ -1498,7 +1526,7 @@ def get_user_options(cfg):
 
     return (keep_params, keep_positions, generate_stl,
             slicer_path, launch_slicer,
-            linear_value, angular_value, extra_cmds)
+            linear_value, angular_value, reset_all, extra_cmds)
 
 
 def export_freecad_files(selection, base_name, fc_3mf, generate_stl,
@@ -2033,17 +2061,6 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 def launch_slicer_if_needed(slicer_path, launch_slicer, fc_3mf):
     """
     Lance le slicer si demandé par l’utilisateur.
@@ -2131,12 +2148,33 @@ def export_replace_geometry():
             print('export_replace_geometry dans 2)', ' move de old vers fc_3mf')
             shutil.move(old_3mf_backup, fc_3mf)
         else:
-            print("1992 shutil.moveold_3mf_backup, fc_3mf non possible old_3mf_backup n'existe pas")
+            if DEBUG: print("1992 shutil.moveold_3mf_backup, fc_3mf non possible",  old_3mf_backup, "n'existe pas")
         return
 
     (keep_params, keep_positions, generate_stl,
      slicer_path, launch_slicer,
-     linear_value, angular_value, extra_cmds) = opts
+     linear_value, angular_value, reset_all, extra_cmds) = opts
+     
+     
+    # Si l'utilisateur veut repartir de zéro
+    if reset_all:
+        if fc_3mf and os.path.exists(fc_3mf):
+            os.remove(fc_3mf)
+
+        show_message(
+            tr("reset_title"),
+            tr("reset_message")
+        )
+
+        # Relancer la macro proprement
+        macro_path = __file__
+        exec(open(macro_path, "r", encoding="utf-8").read())
+        return
+
+
+     
+     
+     
 
     slicer_target = detect_slicer_target_from_path(slicer_path) if slicer_path else None
     
