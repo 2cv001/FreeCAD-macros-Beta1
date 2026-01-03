@@ -1247,22 +1247,15 @@ def replace_mesh_in_model_xml(old_model_xml_bytes, new_model_xml_bytes):
     return xml_bytes
 
 
-
-def inject_geometry_into_qidi_3mf(old_3mf_path, new_3mf_path, new_model_xml_bytes):
+def inject_geometry_into_qidi_3mf(old_3mf_path, new_3mf_path, new_model_xml_bytes,
+                                  keep_positions, decal_z=0):
     """
-    Construit un nouveau 3MF Qidi en remplaçant uniquement le <mesh> dans 3D/3dmodel.model.
-    Conserve :
-      - [Content_Types].xml
-      - _rels/.rels
-      - Metadata/*
-      - namespaces
-      - Application=QIDISlicer-1.2.5
-      - transforms
+    Construit un nouveau 3MF Qidi en remplaçant le <mesh> dans 3D/3dmodel.model
+    et en appliquant le transform selon keep_positions.
     """
-
 
     if not os.path.exists(old_3mf_path):
-        print(' dans inject_geometry_into_qidi_3mf fichier src_3mf inexistant',old_3mf_path) 
+        print('inject_geometry_into_qidi_3mf : fichier inexistant', old_3mf_path)
 
     with zipfile.ZipFile(old_3mf_path, "r") as zin, \
          zipfile.ZipFile(new_3mf_path, "w", compression=zipfile.ZIP_DEFLATED) as zout:
@@ -1271,13 +1264,40 @@ def inject_geometry_into_qidi_3mf(old_3mf_path, new_3mf_path, new_model_xml_byte
             name = info.filename
             data = zin.read(name)
 
-            # On remplace uniquement 3D/3dmodel.model
+            # ------------------------------------------------------------
+            # 1) Remplacement du mesh + transform dans 3D/3dmodel.model
+            # ------------------------------------------------------------
+
+
             if name == "3D/3dmodel.model":
                 merged = replace_mesh_in_model_xml(data, new_model_xml_bytes)
-                zout.writestr(name, merged)
+
+                if keep_positions:
+                    result_bytes = force_zmax_in_transform(merged, decal_z)
+                else:
+                    text = merged.decode("utf-8")
+                    new_transform = (
+                        f'transform="1 0 0 0 1 0 0 0 1 '
+                        f'{PLATEAU_X/2} {PLATEAU_Y/2} {decal_z}"'
+                    )
+                    text = re.sub(
+                        r'(<item[^>]*?)\s+transform="[^"]+"',
+                        r'\1 ' + new_transform,
+                        text
+                    )
+                    result_bytes = text.encode("utf-8")
+
+                zout.writestr(name, result_bytes)
                 continue
 
-            # Tous les autres fichiers sont recopiés tels quels
+
+
+
+
+
+            # ------------------------------------------------------------
+            # 2) Tous les autres fichiers sont recopiés tels quels
+            # ------------------------------------------------------------
             zout.writestr(name, data)
 
 
@@ -1951,7 +1971,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
                         if keep_positions:
                             data = force_zmax_in_transform(data, decal_z)
                         else:
-                            data = reset_item_transform(data, center=(PLATEAU_X, PLATEAU_Y, zmax))
+                            data = reset_item_transform(data, center=(PLATEAU_X/2, PLATEAU_Y/2, decal_z))
                         new_zip.writestr(name, data)
                         continue
 
@@ -1965,7 +1985,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
                 # Cas Qidi mono-objet
                 else:
                     new_zip.close()
-                    inject_geometry_into_qidi_3mf(old_3mf, tmp_new, geom_data_centered)
+                    inject_geometry_into_qidi_3mf( old_3mf, tmp_new, geom_data_centered, keep_positions=keep_positions, decal_z=decal_z, )
                     break
     else:
         if DEBUG: print('1892 fichier old non trouvé.')
