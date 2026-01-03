@@ -51,6 +51,7 @@ from typing import Dict, Optional
 # -------------------------
 INI_FILE = os.path.join(os.path.dirname(__file__), "3mfToPrint.ini")
 PLATEAU_X, PLATEAU_Y, PLATEAU_Z = 240, 240, 0
+DEBUG=False
 
 if platform.system() == "Windows":
     DEFAULT_SLICER_EXE = r"C:\Program Files\QIDIStudio\qidi-studio.exe"
@@ -79,7 +80,7 @@ def load_extra_commands_from_ini(path=INI_FILE):
         if "extra_commands" in cfg and "EXTRA_COMMANDS" in cfg["extra_commands"]:
             return ast.literal_eval(cfg["extra_commands"]["EXTRA_COMMANDS"])
     except Exception as e:
-        print("⚠️ Erreur lecture EXTRA_COMMANDS ini:", e)
+        print("⚠️ Read error EXTRA_COMMANDS ini:", e)
     return []
 
 # Fusion au démarrage : commandes ini avant celles codées en dur
@@ -551,7 +552,7 @@ def analyse_fichier_3mf(file_path: str) -> Dict[str, Optional[str]]:
         'nombre_objets': 'nofile',
         'logiciel': 'nofile'
             }
-        print ('analyse_fichier_3mf : pas de fichier', file_path)
+        if DEBUG: print ('analyse_fichier_3mf : pas de fichier', file_path)
         return result   
     
     # ------------------------------------------------------------
@@ -571,7 +572,7 @@ def analyse_fichier_3mf(file_path: str) -> Dict[str, Optional[str]]:
             "prusaslicer": "slic3r",
             "bambu": "qidistudio", ########### en fait orca est détecté comme bambu car signature bambu
             "orca": "qidistudio", ########### Car même traitement que qidistudio
-            "creality": "qidistudio",
+            "creality": "qidistudio", ########### Car même traitement que qidistudio
             "cura": "cura",
             "freecad": "freecad",
         }
@@ -625,13 +626,8 @@ def analyse_fichier_3mf(file_path: str) -> Dict[str, Optional[str]]:
             ns = {'m': 'http://schemas.microsoft.com/3dmanufacturing/core/2015/02'}
 
             # --------------------------------------------------------
-            # 2.a Détection classique <Creator> / <Application>
-            # --------------------------------------------------------
-           
-
-
-
             # 2.bis Détection QIDIStudio via métadonnées "QIDIStudio:*"
+            # --------------------------------------------------------
             if not logiciel_trouve:
                 metas = root.findall('.//metadata') + root.findall('.//m:metadata', ns)
                 for meta in metas:
@@ -825,8 +821,7 @@ def force_zmax_in_transform(model_data, decalz):
 
     Si plusieurs <item> existent, on les met tous à jour.
     """
-    #decalz = 1000 ###############################################A RETIRER
-    #print('829 decalz forcé à 1000 pour test. A retirer')
+
     text = model_data.decode("utf-8")
 
     def repl(m):
@@ -928,12 +923,12 @@ def clean_qidi_style(src_3mf, dst_3mf):
 """
                 zout.writestr(rels_path, rels_content)
 
-    print(f"✅ Nettoyage QidiSlicer terminé. Objet conservé id={keep_object_id}")
+    if DEBUG: print(f"✅ Nettoyage QidiSlicer terminé. Objet conservé id={keep_object_id}")
     if removed_ids:
-        print(f"   Objets supprimés : {removed_ids}")
+        if DEBUG: print(f"   Objets supprimés : {removed_ids}")
     else:
-        print("   Aucun objet supprimé (mono-objet déjà).")
-    print(f"   Fichier nettoyé : {dst_3mf}")
+        if DEBUG: print("   Aucun objet supprimé (mono-objet déjà).")
+    if DEBUG: print(f"   Fichier nettoyé : {dst_3mf}")
 
 
 def clean_multi_object_style(src_3mf, dst_3mf, mode="qidi"):
@@ -948,7 +943,7 @@ def clean_multi_object_style(src_3mf, dst_3mf, mode="qidi"):
     - Nettoyage complet de Metadata/model_settings.config
     """
 
-    print("\n=== Nettoyage CHIRURGICAL QidiStudio ===")
+    if DEBUG: print("\n=== clean_multi_object_style ===")
     if not os.path.exists(src_3mf):
         print(' dans clean_multi_object_style fichier src_3mf inexistant',src_3mf)
 
@@ -966,7 +961,7 @@ def clean_multi_object_style(src_3mf, dst_3mf, mode="qidi"):
             if n.startswith("3D/Objects/") and n.endswith(".model")
         ]
 
-        print(f"📁 Objets trouvés : {object_models}")
+        if DEBUG: print(f"📁 Objets trouvés : {object_models}")
 
         if not object_models:
             print("⚠️ Aucun objet trouvé → fichier non conforme QidiStudio")
@@ -975,8 +970,8 @@ def clean_multi_object_style(src_3mf, dst_3mf, mode="qidi"):
         keep_model = object_models[0]
         to_delete = object_models[1:]
 
-        print(f"➡️ Objet conservé : {keep_model}")
-        print(f"🗑️ Objets supprimés : {to_delete}")
+        if DEBUG: print(f"➡️ Objet conservé : {keep_model}")
+        if DEBUG: print(f"🗑️ Objets supprimés : {to_delete}")
 
         # --- 2) Nettoyage CHIRURGICAL du 3dmodel.model ---
         model_txt = zin.read(model_path).decode("utf-8")
@@ -993,7 +988,7 @@ def clean_multi_object_style(src_3mf, dst_3mf, mode="qidi"):
             return None, keep_model
 
         keep_object_id = m.group(1)
-        print(f"➡️ ID parent conservé : {keep_object_id}")
+        if DEBUG: print(f"➡️ ID parent conservé : {keep_object_id}")
 
         # SUPPRESSION des <object> excédentaires
         model_txt_before = model_txt
@@ -1003,7 +998,7 @@ def clean_multi_object_style(src_3mf, dst_3mf, mode="qidi"):
             model_txt
         )
         if model_txt != model_txt_before:
-            print("🗑️ Objets excédentaires supprimés dans 3dmodel.model")
+            if DEBUG: print("🗑️ Objets excédentaires supprimés dans 3dmodel.model")
 
         # SUPPRESSION des <item> excédentaires
         model_txt_before = model_txt
@@ -1090,9 +1085,9 @@ def clean_multi_object_style(src_3mf, dst_3mf, mode="qidi"):
 
                 zout.writestr(name, zin.read(item.filename))
 
-    print("✅ Nettoyage CHIRURGICAL terminé.")
-    print(f"➡️ Objet final conservé : {keep_model} (id={keep_object_id})")
-    print(f"➡️ Fichier nettoyé : {dst_3mf}")
+    if DEBUG: print("✅ Nettoyage CHIRURGICAL terminé.")
+    if DEBUG: print(f"➡️ Objet final conservé : {keep_model} (id={keep_object_id})")
+    if DEBUG: print(f"➡️ Fichier nettoyé : {dst_3mf}")
 
     return keep_object_id, keep_model
 
@@ -1123,11 +1118,11 @@ def clean_prusa_style(src_3mf, dst_3mf):
         objects = re.findall(r'<object[^>]*id="(\d+)"', model_txt)
         objects = list(dict.fromkeys(objects))  # unique
 
-        print(f"📦 Objets trouvés dans <resources> : {objects}")
+        if DEBUG: print(f"📦 Objets trouvés dans <resources> : {objects}")
 
         # CAS 1 : Mono-objet → rien à nettoyer
         if len(objects) <= 1:
-            print("➡️ Mono-objet Prusa → copie brute")
+            if DEBUG: print("➡️ Mono-objet Prusa → copie brute")
             shutil.copy(src_3mf, dst_3mf)
             return objects[0] if objects else None, model_path
 
@@ -1135,8 +1130,8 @@ def clean_prusa_style(src_3mf, dst_3mf):
         keep_object_id = objects[0]
         delete_ids = objects[1:]
 
-        print(f"➡️ Objet conservé : {keep_object_id}")
-        print(f"🗑️ Objets supprimés : {delete_ids}")
+        if DEBUG: print(f"➡️ Objet conservé : {keep_object_id}")
+        if DEBUG: print(f"🗑️ Objets supprimés : {delete_ids}")
 
         # --- Nettoyage du 3dmodel.model ---
         # Supprimer les <object> excédentaires
@@ -1175,7 +1170,7 @@ def clean_prusa_style(src_3mf, dst_3mf):
             )
 
         # --- Réécriture du ZIP ---
-        print("📦 Réécriture du fichier nettoyé…")
+        if DEBUG: print("📦 Réécriture du fichier nettoyé…")
 
         with zipfile.ZipFile(dst_3mf, "w", compression=zipfile.ZIP_DEFLATED) as zout:
             for item in zin.infolist():
@@ -1195,9 +1190,9 @@ def clean_prusa_style(src_3mf, dst_3mf):
 
                 zout.writestr(name, zin.read(item.filename))
 
-    print("✅ Nettoyage PrusaSlicer terminé.")
-    print(f"➡️ Objet final conservé : {keep_object_id}")
-    print(f"➡️ Fichier nettoyé : {dst_3mf}")
+    if DEBUG: print("✅ Nettoyage PrusaSlicer terminé.")
+    if DEBUG: print(f"➡️ Objet final conservé : {keep_object_id}")
+    if DEBUG: print(f"➡️ Fichier nettoyé : {dst_3mf}")
 
     return keep_object_id, model_path
 
@@ -1564,7 +1559,7 @@ def handle_empty_plate(fc_3mf_existed_at_start, old_3mf_backup, fc_3mf):
         #    print('Effacement du fichier ', fc_3mf)
         #    os.remove(fc_3mf)     
         shutil.copy(old_3mf_backup, fc_3mf)
-        print ('copie du fichier', old_3mf_backup, ' en ', fc_3mf)  
+        if DEBUG: print ('copie du fichier', old_3mf_backup, ' en ', fc_3mf)  
 
         #----------------------Relance de la macro -----------------------------------
         export_replace_geometry()
@@ -1576,7 +1571,7 @@ def handle_empty_plate(fc_3mf_existed_at_start, old_3mf_backup, fc_3mf):
     elif clicked == reset_btn:
         if os.path.exists(fc_3mf):
             os.remove(fc_3mf)
-        print("🗑️ Nouveau projet : 3MF FreeCAD supprimé. Relance de la macro.")
+        print("🗑️ New projet : 3MF FreeCAD deleted. Macro run again.")
         export_replace_geometry()
         return False  # On arrête ce cycle
 
@@ -1584,7 +1579,7 @@ def handle_empty_plate(fc_3mf_existed_at_start, old_3mf_backup, fc_3mf):
     # 3) Annuler 
     # ------------------------------------------------------------
     else:
-        print("ℹ️ Annulé par l’utilisateur.")
+        if DEBUG: print("ℹ️ Annulé par l’utilisateur.")
         return False
 
 
@@ -1647,7 +1642,7 @@ def ensure_cura_drop_to_buildplate(model_data):
 
 
 def patch_drop_to_buildplate_in_place(path):
-    print('Mise à plat pour le slicer')
+    if DEBUG: print('Mise à plat pour le slicer')
     tmp = path + ".tmp"
 
     # Lire
@@ -1672,7 +1667,7 @@ def patch_drop_to_buildplate_in_place(path):
 
 # Réinitialise la transformation des items en les centrant sur un point donné
 def reset_item_transform(model_data, center=(PLATEAU_X, PLATEAU_Y, PLATEAU_Z)):
-    print('1593 début reset_item_transform')
+    if DEBUG: print('1593 début reset_item_transform')
     text = model_data.decode("utf-8")
     new_transform = f'transform="1 0 0 0 1 0 0 0 1 {center[0]} {center[1]} {center[2]}"'
     text = re.sub(r'(<item[^>]*?)\s+transform="[^"]+"', r'\1 ' + new_transform, text)
@@ -1687,7 +1682,7 @@ def recenter_vertices(model_data, slicer_target, slicer_source, fc_3mf_existed_a
     Retourne : (données XML modifiées, zmax)
     """
     try:
-        print('1608 début recenter_vertices : Recentrage des vertex en X/Y et calcul du decal_z ')
+        if DEBUG: print('1608 début recenter_vertices : Recentrage des vertex en X/Y et calcul du decal_z ')
         ET.register_namespace('', "http://schemas.microsoft.com/3dmanufacturing/core/2015/02")
         root = ET.fromstring(model_data.decode("utf-8"))
         ns = {"ns": "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"}
@@ -1702,14 +1697,14 @@ def recenter_vertices(model_data, slicer_target, slicer_source, fc_3mf_existed_a
         ys = [float(v.attrib["y"]) for v in verts]
         zs = [float(v.attrib["z"]) for v in verts]
 
-        print('center_x',center_x)
-        print('center_y',center_y)
+        if DEBUG: print('center_x',center_x)
+        if DEBUG: print('center_y',center_y)
         # Calcul du centre XY et du décalage en z
         xc, yc = (min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0
         decal_z = -1*min(zs) 
 
             
-        print('1636 application d un decal_z de', decal_z)
+        if DEBUG: print('1636 application d un decal_z de', decal_z)
 
         # Recentrage XY
         for v in verts:
@@ -1732,9 +1727,9 @@ def recentrer_3mf_fichier(file_path, slicer_target, slicer_source, fc_3mf_existe
         - True si OK
         - False si erreur
     """
-    print('1653 début recentrer_3mf_fichier')
+    if DEBUG: print('1653 début recentrer_3mf_fichier')
     if not os.path.exists(file_path):
-        print("❌ Fichier introuvable :", file_path)
+        if DEBUG: print("❌ Fichier introuvable :", file_path)
         return False
 
 
@@ -1745,11 +1740,10 @@ def recentrer_3mf_fichier(file_path, slicer_target, slicer_source, fc_3mf_existe
 
     # Vérifier que le fichier 3D existe
     if "3D/3dmodel.model" not in buffer:
-        print("❌ Pas de 3D/3dmodel.model dans le 3MF")
+        if DEBUG: print("❌ Pas de 3D/3dmodel.model dans le 3MF")
         return False
 
     # Appel de ta fonction existante
-    print('appel de recenter_vertices ')
     new_model_data, decal_z = recenter_vertices(
         buffer["3D/3dmodel.model"],
         slicer_target,
@@ -1765,8 +1759,6 @@ def recentrer_3mf_fichier(file_path, slicer_target, slicer_source, fc_3mf_existe
     with zipfile.ZipFile(file_path, 'w', zipfile.ZIP_DEFLATED) as zout:
         for name, data in buffer.items():
             zout.writestr(name, data)
-
-    print("✅ Recentrage terminé. decal_z =", decal_z)
     return True
 
 
@@ -1838,7 +1830,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
     slicer_target = None    ####################################" A supprimer ?
 
     if not inject_possible:
-        print("✅ Fichier généré uniquement par FreeCAD :", fc_3mf)
+        print("✅ File generated exclusively by FreeCAD  :", fc_3mf)
         return ""
 
     # ------------------------------------------------------------
@@ -1846,7 +1838,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
     # ------------------------------------------------------------
    
     slicer_source = nameSlicer(old_3mf_backup)
-    print ('1845 2) détection du slicer source slicer_source =', slicer_source)
+    if DEBUG: print ('1845 2) détection du slicer source slicer_source =', slicer_source)
 
     # ------------------------------------------------------------
     # 3) Détection du slicer cible
@@ -1860,13 +1852,13 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
     if slicer_target not in (None, "unknown") and slicer_source not in ("none", "unknown", "freecad") \
        and slicer_source != slicer_target:
         action = ask_incompatible_slicer_dialog(slicer_source, slicer_target)
-        print('action', action)
+        if DEBUG: print('action', action)
         if action == "cancel":
             if os.path.exists(fc_3mf):
                 os.remove(fc_3mf)
             if fc_3mf_existed_at_start and os.path.exists(old_3mf_backup):
                 shutil.move(old_3mf_backup, fc_3mf) ######################################## A REMPLACER PAR UN COPY ?
-            print("❌ Opération annulée par l’utilisateur (slicers incompatibles).")
+            if DEBUG: print("❌ Opération annulée par l’utilisateur (slicers incompatibles).")
             return "cancel"
 
         if action == "delete":
@@ -1919,7 +1911,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
         return ""
         
     if not os.path.exists(fc_3mf):
-            print(' dans inject_geometry_into_qidi_3mf fichier src_3mf inexistant',fc_3mf)  
+            if DEBUG: print(' dans inject_geometry_into_qidi_3mf fichier src_3mf inexistant',fc_3mf)  
 
     with zipfile.ZipFile(fc_3mf, 'r') as fc_zip:
         geom_data = fc_zip.read(geom_entry)
@@ -1947,7 +1939,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
                     # Remplacement du modèle principal
                     if name == keep_model:
                         new_zip.writestr(name, geom_data_centered)
-                        print(f"   ✅ Objet injecté : {keep_model}")
+                        if DEBUG: print(f"   ✅ Objet injecté : {keep_model}")
                         continue
 
                     # Suppression des autres objets
@@ -1976,7 +1968,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
                     inject_geometry_into_qidi_3mf(old_3mf, tmp_new, geom_data_centered)
                     break
     else:
-        print('1892 fichier old non trouvé.')
+        if DEBUG: print('1892 fichier old non trouvé.')
 
     # ------------------------------------------------------------
     # 8) Remplacement du fichier final
@@ -1988,7 +1980,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
     if os.path.exists(old_3mf):
         os.remove(old_3mf)
 
-    print("✅ Export avec récupération des paramètres du slicer :", fc_3mf)
+    print("✅ Export with slicer parameter retrieval", fc_3mf)
 
 
 def launch_slicer_if_needed(slicer_path, launch_slicer, fc_3mf):
@@ -2050,7 +2042,7 @@ def run_extra_commands(extra_cmds):
 
 def export_replace_geometry():
 
-    print('\n\n>>> NOUVELLE EXECUTION DE LA MACRO <<<')
+    print('\n\n>>> MACRO 3mfToPrint <<<')
 
     # ------------------------------------------------------------
     # 1) Vérifications initiales
@@ -2092,8 +2084,8 @@ def export_replace_geometry():
     # récup slice source
     #--------------------------------------------------------------
     
-    slicer_source = nameSlicer(fc_3mf) #######################################################################
-    print ('==============slicer_source', slicer_source)
+    slicer_source = nameSlicer(fc_3mf)
+
 
 
     # ------------------------------------------------------------
@@ -2143,10 +2135,16 @@ def export_replace_geometry():
         slicer_path, keep_params, keep_positions
     ) == 'cancel' :
         return
-    print('slicer_source',slicer_source)
-    print('slicer_target',slicer_target)        
+    if DEBUG: print('slicer_source',slicer_source)
+    if DEBUG: print('slicer_target',slicer_target)     
+
+    #-----------------------------------------------------------------------------
+    # Derniers traitements sur le fichier fc_3mf avant lancement du slicer
+    #----------------------------------------------------------------------------
+
+    
     if slicer_target in ['cura'] and slicer_source not in ['cura']:
-        print('recentrage demandé car cura en cible mais pas en source')
+        if DEBUG: print('recentrage demandé car cura en cible mais pas en source')
         recentrer_3mf_fichier(fc_3mf, slicer_target, slicer_source, fc_3mf_existed_at_start,
             PLATEAU_X/2, PLATEAU_Y/2)
             
