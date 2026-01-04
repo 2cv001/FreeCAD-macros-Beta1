@@ -105,7 +105,6 @@ TRANSLATIONS = {
 
         # Options UI
         "options_title": "Options d'export vers QidiStudio",
-        "keep_params": "Conserver les paramètres d'impression (profil du slicer)",
         "keep_positions": "Conserver les positions sur le plateau",
         "generate_stl": "En plus du .3mf, générer également un STL",
         "launch_slicer": "Lancer le slicer",
@@ -169,7 +168,6 @@ TRANSLATIONS = {
         "no_external_actions": "Pas encore de commandes utilisateurs ajoutées.",
         "hint_external_actions": "Vous pouvez ajouter vos propres actions dans le fichier ini, section [extra_commands].\n"
                                  "Chaque commande peut être configurée avec délai et activation par case à cocher.",
-        "hint_keep_params": "Conserve les paramètres du slicer (profil d'impression).",
         "hint_generate_stl": "Génère aussi un fichier STL en plus du 3MF.",
         "hint_launch_slicer": "Lance automatiquement le slicer après export si le chemin est valide.",
         "ini_file_label": "Fichier ini :",
@@ -190,8 +188,6 @@ TRANSLATIONS = {
 
         # UI options
         "options_title": "Export options for QidiStudio",
-        "keep_params": "Keep print settings (slicer profile)",
-        "keep_positions": "Keep positions on the build plate",
         "generate_stl": "Also generate an STL along with the 3MF",
         "launch_slicer": "Launch slicer",
         "browse": "Browse…",
@@ -254,7 +250,6 @@ TRANSLATIONS = {
         "no_external_actions": "No user commands added yet.",
         "hint_external_actions": "You can add your own actions in the ini file, section [extra_commands].\n"
                                  "Each command can be configured with delay and checkbox activation.",
-        "hint_keep_params": "Keeps slicer parameters (printing profile).",
         "hint_generate_stl": "Also generates an STL file along with the 3MF.",
         "hint_launch_slicer": "Automatically launches the slicer after export if the path is valid.",
         "ini_file_label": "INI file:",
@@ -291,7 +286,6 @@ def get_user_language():
 def tr(key):
     lang = get_user_language()
     return TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key, key)
-
 
 
 # -------------------------
@@ -390,17 +384,7 @@ def ask_user_options(current_slicer, current_linear, current_angular):
     layout = QtGui.QVBoxLayout()
 
     # Cases principales
-    """
-    chk_params = QtGui.QCheckBox(tr("keep_params"))
-    chk_params.setToolTip(tr("hint_keep_params"))
-    chk_params.setChecked(True)
-    layout.addWidget(chk_params)
 
-    chk_positions = QtGui.QCheckBox(tr("keep_positions"))
-    chk_positions.setToolTip(tr("hint_positions"))
-    chk_positions.setChecked(True)
-    layout.addWidget(chk_positions)
-    """
 
     chk_stl = QtGui.QCheckBox(tr("generate_stl"))
     chk_stl.setToolTip(tr("hint_generate_stl"))
@@ -506,8 +490,6 @@ def ask_user_options(current_slicer, current_linear, current_angular):
         angular_deg = float(spin_ang.value())
         angular_rad = angular_deg * math.pi / 180.0
         return (
-            True,                     # keep_params (supprimé de l’UI)
-            True,                     # keep_positions (supprimé de l’UI)
             chk_stl.isChecked(),
             edit_slicer.text(),
             chk_launch.isChecked(),
@@ -519,7 +501,7 @@ def ask_user_options(current_slicer, current_linear, current_angular):
 
 
     else:
-        return (None, None, None, None, None, None, None, None, [])
+        return (None, None, None, None, None, None, [])
 
 
 # -------------------------
@@ -555,8 +537,6 @@ def detect_slicer_target_from_path(path):
         return "cura"
 
     return "unknown"
-
-
 
 # ------------------------------------------------------------
 # Analyse du fichier 3MF (nb objets et slicer)
@@ -727,7 +707,6 @@ def analyse_fichier_3mf(file_path: str) -> Dict[str, Optional[str]]:
                     result['logiciel'] = "unknown"
 
     return result
-
 
 
 def nameSlicer(File3mf: str):
@@ -1296,10 +1275,9 @@ def replace_mesh_in_model_xml(old_model_xml_bytes, new_model_xml_bytes):
 
 
 def inject_geometry_into_qidi_3mf(old_3mf_path, new_3mf_path, new_model_xml_bytes,
-                                  keep_positions, decal_z=0):
+                                   decal_z=0):
     """
     Construit un nouveau 3MF Qidi en remplaçant le <mesh> dans 3D/3dmodel.model
-    et en appliquant le transform selon keep_positions.
     """
 
     if not os.path.exists(old_3mf_path):
@@ -1319,29 +1297,9 @@ def inject_geometry_into_qidi_3mf(old_3mf_path, new_3mf_path, new_model_xml_byte
 
             if name == "3D/3dmodel.model":
                 merged = replace_mesh_in_model_xml(data, new_model_xml_bytes)
-
-                if keep_positions:
-                    result_bytes = force_zmax_in_transform(merged, decal_z)
-                else:
-                    text = merged.decode("utf-8")
-                    new_transform = (
-                        f'transform="1 0 0 0 1 0 0 0 1 '
-                        f'{PLATEAU_X/2} {PLATEAU_Y/2} {decal_z}"'
-                    )
-                    text = re.sub(
-                        r'(<item[^>]*?)\s+transform="[^"]+"',
-                        r'\1 ' + new_transform,
-                        text
-                    )
-                    result_bytes = text.encode("utf-8")
-
+                result_bytes = force_zmax_in_transform(merged, decal_z)
                 zout.writestr(name, result_bytes)
                 continue
-
-
-
-
-
 
             # ------------------------------------------------------------
             # 2) Tous les autres fichiers sont recopiés tels quels
@@ -1366,14 +1324,12 @@ def ask_incompatible_slicer_dialog(s_source, s_target):
     msg.setText(txt)
 
     # Boutons 
-    #btn_keep = msg.addButton(tr("btn_keep"), QtGui.QMessageBox.AcceptRole)
     btn_delete = msg.addButton(tr("btn_delete"), QtGui.QMessageBox.DestructiveRole)
     btn_cancel = msg.addButton(tr("btn_cancel"), QtGui.QMessageBox.RejectRole)
 
     msg.exec()
 
-    #if msg.clickedButton() == btn_keep:
-    #    return "keep"
+
     if msg.clickedButton() == btn_delete:
         return "delete"
     return "cancel"
@@ -1482,11 +1438,7 @@ def get_user_options(cfg):
     - validation du chemin du slicer
     - sauvegarde des préférences
 
-    Retourne :
-        (keep_params, keep_positions, generate_stl,
-         slicer_path, launch_slicer,
-         linear_value, angular_value, extra_cmds)
-    ou None si annulation.
+
     """
 
     # Préférences actuelles
@@ -1496,7 +1448,7 @@ def get_user_options(cfg):
 
     while True:
         # Appel de la boîte de dialogue utilisateur
-        (keep_params, keep_positions, generate_stl,
+        (generate_stl,
          slicer_path, launch_slicer,
          linear_value, angular_value, reset_all, extra_cmds) = ask_user_options(
             slicer_path_pref, linear_pref, angular_pref
@@ -1524,7 +1476,7 @@ def get_user_options(cfg):
         slicer_path=slicer_path
     )
 
-    return (keep_params, keep_positions, generate_stl,
+    return (generate_stl, 
             slicer_path, launch_slicer,
             linear_value, angular_value, reset_all, extra_cmds)
 
@@ -1835,7 +1787,7 @@ def recentrer_3mf_fichier(file_path, slicer_target, slicer_source, fc_3mf_existe
 
 
 def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existed_at_start,
-                                slicer_path, keep_params, keep_positions):
+                                slicer_path):
     """
     Injection géométrique dans un fichier 3MF existant.
     """
@@ -1974,14 +1926,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
                 # 1) Remplacement du modèle principal
                 if name == keep_model:
                     merged = replace_mesh_in_model_xml(data, geom_data_centered)
-
-                    if keep_positions:
-                        merged = force_zmax_in_transform(merged, decal_z)
-                    else:
-                        merged = reset_item_transform(
-                            merged,
-                            center=(PLATEAU_X/2, PLATEAU_Y/2, decal_z)
-                        )
+                    merged = force_zmax_in_transform(merged, decal_z)
 
                     new_zip.writestr(name, merged)
                     continue
@@ -1992,32 +1937,12 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
 
                 # 3) Transformations globales (3dmodel.model)
                 if name.endswith("3dmodel.model"):
-                    if keep_positions:
-                        data = force_zmax_in_transform(data, decal_z)
-                    else:
-                        data = reset_item_transform(
-                            data,
-                            center=(PLATEAU_X/2, PLATEAU_Y/2, decal_z)
-                        )
+                    data = force_zmax_in_transform(data, decal_z)
                     new_zip.writestr(name, data)
                     continue
-                """
-                # 4) Métadonnées
-                if name.startswith("Metadata/") and not keep_params:
-                    # On ne supprime PAS les metadata QidiSlicer
-                    if slicer_source != "qidislicer":
-                        continue
-                """
                 
-                
-                # 4) Métadonnées
-                if name.startswith("Metadata/") and not keep_params:
-                    if name != "Metadata/Application":
-                        continue
 
-                    
-                    
-                
+            
                 # 5) Recopie du reste
                 new_zip.writestr(name, data)
 
@@ -2033,13 +1958,9 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
             old_3mf,
             tmp_new,
             geom_data_centered,
-            keep_positions,
             decal_z
         )
 
-    # Ensuite SEULEMENT on nettoie Metadata/
-    if not keep_params:
-        clean_metadata_for_qidi(tmp_new)
 
     # À ce stade, tmp_new contient enfin le bon fichier final
 
@@ -2151,7 +2072,7 @@ def export_replace_geometry():
             if DEBUG: print("1992 shutil.moveold_3mf_backup, fc_3mf non possible",  old_3mf_backup, "n'existe pas")
         return
 
-    (keep_params, keep_positions, generate_stl,
+    (generate_stl,
      slicer_path, launch_slicer,
      linear_value, angular_value, reset_all, extra_cmds) = opts
      
@@ -2231,7 +2152,7 @@ def export_replace_geometry():
       
     if inject_geometry_if_possible(
         base_name, fc_3mf, old_3mf_backup, fc_3mf_existed_at_start,
-        slicer_path, keep_params, keep_positions
+        slicer_path
     ) == 'cancel' :
         return
     if DEBUG: print('slicer_source',slicer_source)
