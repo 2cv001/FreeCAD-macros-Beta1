@@ -50,6 +50,7 @@ import configparser, ast, platform, time
 import FreeCAD, FreeCADGui, Mesh, MeshPart
 from PySide import QtGui, QtCore
 from typing import Dict, Optional
+import gc
 
 # -------------------------
 # Constantes et configuration
@@ -2147,24 +2148,18 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
 
 
 
-
-
-
-
-
-
-
-
-
-
     # ------------------------------------------------------------
     # 9) Remplacement du fichier final
     # ------------------------------------------------------------
+    gc.collect() 
+    time.sleep(0.05)
     if os.path.exists(fc_3mf):
         os.remove(fc_3mf)
         if DEBUG: print('suppressin de ', os.path.basename(fc_3mf) )
 
     if DEBUG: print('move de ', os.path.basename(tmp_new), 'vers', os.path.basename(fc_3mf))
+    gc.collect() 
+    time.sleep(0.05)    
     shutil.move(tmp_new, fc_3mf)
 
     if os.path.exists(old_3mf):
