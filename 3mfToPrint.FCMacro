@@ -1329,13 +1329,16 @@ def replace_mesh_in_model_xml(old_model_xml_bytes, new_model_xml_bytes):
 
     return xml_bytes
 
+
+
+
 def inject_geometry_into_qidi_3mf(old_3mf_path, new_3mf_path, new_model_xml_bytes,
                                    decal_z=0):
     """
     Construit un nouveau 3MF Qidi en remplaçant le <mesh> dans 3D/3dmodel.model
     et en corrigeant le transform en fonction de la rotation réelle du mesh.
     """
-
+    if DEBUG : print('Début inject_geometry_into_qidi_3mf')
     if not os.path.exists(old_3mf_path):
         print('inject_geometry_into_qidi_3mf : fichier inexistant', old_3mf_path)
 
@@ -1374,6 +1377,7 @@ def inject_geometry_into_qidi_3mf(old_3mf_path, new_3mf_path, new_model_xml_byte
                     # Corriger chaque transform
                     for item in items:
                         correct_item_transform_z(new_model_xml_bytes, item)
+                                              
 
                     # Reconvertir en bytes
                     merged = ET.tostring(root, encoding="utf-8")
@@ -1383,11 +1387,75 @@ def inject_geometry_into_qidi_3mf(old_3mf_path, new_3mf_path, new_model_xml_byte
 
                 zout.writestr(name, merged)
                 continue
+            # ------------------------------------------------------------
+            # 3) Correction du volume dans /Metadata/Slic3r_PE_model.config
+            # ------------------------------------------------------------
+            if name == "Metadata/Slic3r_PE_model.config":
+
+                try:
+                    root = ET.fromstring(data)
+
+                    new_root = ET.fromstring(new_model_xml_bytes)
+
+                    print(">>> DEBUG: Root tag =", new_root.tag)
+
+                    # Gestion du namespace pour trouver <triangle>
+                    if "}" in new_root.tag:
+                        ns_uri = new_root.tag.split("}")[0].strip("{")
+                        ns_tri = {"m": ns_uri}
+                        print(">>> DEBUG: Namespace détecté :", ns_uri)
+
+                        tris = new_root.findall(".//m:triangle", ns_tri)
+                        print(">>> DEBUG: Recherche avec namespace → triangles trouvés :", len(tris))
+
+                    else:
+                        print(">>> DEBUG: Pas de namespace, recherche simple")
+                        tris = new_root.findall(".//triangle")
+                        print(">>> DEBUG: Recherche simple → triangles trouvés :", len(tris))
+
+                    lastid = len(tris) - 1
+                    print(">>> DEBUG: lastid calculé =", lastid)
+
+
+
+                    """
+                    # Récupérer le nombre de triangles du nouveau mesh
+                    new_root = ET.fromstring(new_model_xml_bytes)
+                    print(">>> DEBUG : Aperçu du new_model_xml_bytes :")
+                    print(new_model_xml_bytes[:500])
+
+                    tris = new_root.findall(".//triangle")
+                    print(">>> DEBUG : Nombre de triangles trouvés :", len(tris))
+
+                    lastid = len(tris) - 1
+                    """
+                    
+                    
+                    
+                    
+
+                    # Trouver le volume
+                    volume = root.find(".//volume")
+                    if volume is not None:
+                        volume.set("firstid", "0")
+                        volume.set("lastid", str(lastid))
+
+                    # Reconvertir
+                    fixed = ET.tostring(root, encoding="utf-8")
+                    zout.writestr(name, fixed)
+                    continue
+
+                except Exception as e:
+                    print("⚠️ Erreur lors de la correction du volume Metadata :", e)
+
+
+
 
             # ------------------------------------------------------------
             # 2) Tous les autres fichiers sont recopiés tels quels
             # ------------------------------------------------------------
             zout.writestr(name, data)
+
 
 
 def ask_incompatible_slicer_dialog(s_source, s_target):
@@ -1777,6 +1845,7 @@ def reset_item_transform(model_data, center=(PLATEAU_X, PLATEAU_Y, PLATEAU_Z)):
 
 
 
+
 # Recentre les sommets en XY et calcule le decal_z pour placement correct
 def recenter_vertices(model_data, slicer_target, slicer_source, fc_3mf_existed_at_start, center_x = 0, center_y = 0):
     """
@@ -1798,7 +1867,6 @@ def recenter_vertices(model_data, slicer_target, slicer_source, fc_3mf_existed_a
         xs = [float(v.attrib["x"]) for v in verts]
         ys = [float(v.attrib["y"]) for v in verts]
         zs = [float(v.attrib["z"]) for v in verts]
-        print('1714 zs',zs)
 
         if DEBUG: print('center_x',center_x)
         if DEBUG: print('center_y',center_y)
@@ -1818,6 +1886,7 @@ def recenter_vertices(model_data, slicer_target, slicer_source, fc_3mf_existed_a
     except Exception as e:
         print("⚠️ Erreur dans recenter_vertices :", e)
         return model_data, decal_z
+
 
 
 def recentrer_3mf_fichier(file_path, slicer_target, slicer_source, fc_3mf_existed_at_start, center_x, center_y):
@@ -1866,6 +1935,7 @@ def recentrer_3mf_fichier(file_path, slicer_target, slicer_source, fc_3mf_existe
 
 
 
+
 def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existed_at_start,
                                 slicer_path):
     """
@@ -1887,6 +1957,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
     # 2) Détection du slicer source A SUPPRMER LE PASSER EN PARAMETRE#########################################################################################
     # ------------------------------------------------------------
     slicer_source = nameSlicer(old_3mf_backup)
+    print('1919 slicer_source',slicer_source)
 
 
     # ------------------------------------------------------------
@@ -1964,11 +2035,12 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
 
     with zipfile.ZipFile(fc_3mf, 'r') as fc_zip:
         geom_data = fc_zip.read(geom_entry)
-        print('geom_data',geom_data)
+    print(">>> DEBUG: nb '<triangle>' dans geom_data (FreeCAD) :", geom_data.count(b"<triangle"))
 
     geom_data_centered, decal_z = recenter_vertices(
         geom_data, slicer_target, slicer_source, fc_3mf_existed_at_start
     )
+    print(">>> DEBUG: nb '<triangle>' dans geom_data_centered :", geom_data_centered.count(b"<triangle"))
 
     # ------------------------------------------------------------
     # 7) Reconstruction du 3MF final
