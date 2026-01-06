@@ -1331,16 +1331,22 @@ def replace_mesh_in_model_xml(old_model_xml_bytes, new_model_xml_bytes):
 
 
 
-
 def inject_geometry_into_qidi_3mf(old_3mf_path, new_3mf_path, new_model_xml_bytes,
                                    decal_z=0):
     """
     Construit un nouveau 3MF Qidi en remplaçant le <mesh> dans 3D/3dmodel.model
     et en corrigeant le transform en fonction de la rotation réelle du mesh.
     """
-    if DEBUG : print('Début inject_geometry_into_qidi_3mf')
+
+    if DEBUG:
+        print('Début inject_geometry_into_qidi_3mf')
+
     if not os.path.exists(old_3mf_path):
         print('inject_geometry_into_qidi_3mf : fichier inexistant', old_3mf_path)
+
+    # --- NOUVEAU : stockage du Metadata corrigé ---
+    corrected_metadata = None
+    meta_name = "Metadata/Slic3r_PE_model.config"
 
     with zipfile.ZipFile(old_3mf_path, "r") as zin, \
          zipfile.ZipFile(new_3mf_path, "w", compression=zipfile.ZIP_DEFLATED) as zout:
@@ -1351,14 +1357,11 @@ def inject_geometry_into_qidi_3mf(old_3mf_path, new_3mf_path, new_model_xml_byte
 
             # ------------------------------------------------------------
             # 1) Remplacement du mesh + correction du transform
-            #    dans 3D/3dmodel.model
             # ------------------------------------------------------------
             if name == "3D/3dmodel.model":
 
-                # Remplacer le mesh dans le XML
                 merged = replace_mesh_in_model_xml(data, new_model_xml_bytes)
 
-                # Charger le XML pour corriger les <item transform="...">
                 try:
                     root = ET.fromstring(merged)
 
@@ -1371,90 +1374,71 @@ def inject_geometry_into_qidi_3mf(old_3mf_path, new_3mf_path, new_model_xml_byte
                         ns = {}
                         item_xpath = ".//build/item"
 
-                    # Trouver les items
+                    # Corriger les transforms
                     items = root.findall(item_xpath, ns)
-
-                    # Corriger chaque transform
                     for item in items:
                         correct_item_transform_z(new_model_xml_bytes, item)
-                                              
 
-                    # Reconvertir en bytes
-                    merged = ET.tostring(root, encoding="utf-8")
-
-                except Exception as e:
-                    print("⚠️ Erreur lors de la correction des transforms QidiSlicer :", e)
-
-                zout.writestr(name, merged)
-                continue
-            # ------------------------------------------------------------
-            # 3) Correction du volume dans /Metadata/Slic3r_PE_model.config
-            # ------------------------------------------------------------
-            if name == "Metadata/Slic3r_PE_model.config":
-
-                try:
-                    root = ET.fromstring(data)
-
+                    # ------------------------------------------------------------
+                    # Correctif Metadata QidiSlicer
+                    # ------------------------------------------------------------
                     new_root = ET.fromstring(new_model_xml_bytes)
 
-                    print(">>> DEBUG: Root tag =", new_root.tag)
-
-                    # Gestion du namespace pour trouver <triangle>
+                    # Namespace dynamique
                     if "}" in new_root.tag:
                         ns_uri = new_root.tag.split("}")[0].strip("{")
                         ns_tri = {"m": ns_uri}
-                        print(">>> DEBUG: Namespace détecté :", ns_uri)
-
                         tris = new_root.findall(".//m:triangle", ns_tri)
-                        print(">>> DEBUG: Recherche avec namespace → triangles trouvés :", len(tris))
-
                     else:
-                        print(">>> DEBUG: Pas de namespace, recherche simple")
                         tris = new_root.findall(".//triangle")
-                        print(">>> DEBUG: Recherche simple → triangles trouvés :", len(tris))
+
+                    # Sécurité : fallback brut
+                    if not tris:
+                        tris = [t for t in new_root.iter() if t.tag.endswith("triangle")]
 
                     lastid = len(tris) - 1
-                    print(">>> DEBUG: lastid calculé =", lastid)
 
+                    if DEBUG:
+                        print(">>> Qidi Metadata fix → lastid =", lastid)
 
+                    # Charger et corriger le Metadata
+                    if meta_name in zin.namelist():
+                        meta_data = zin.read(meta_name)
+                        meta_root = ET.fromstring(meta_data)
 
-                    """
-                    # Récupérer le nombre de triangles du nouveau mesh
-                    new_root = ET.fromstring(new_model_xml_bytes)
-                    print(">>> DEBUG : Aperçu du new_model_xml_bytes :")
-                    print(new_model_xml_bytes[:500])
+                        volume = meta_root.find(".//volume")
+                        if volume is not None:
+                            volume.set("firstid", "0")
+                            volume.set("lastid", str(lastid))
 
-                    tris = new_root.findall(".//triangle")
-                    print(">>> DEBUG : Nombre de triangles trouvés :", len(tris))
+                        # --- NOUVEAU : on stocke, on n'écrit PAS ici ---
+                        corrected_metadata = ET.tostring(meta_root, encoding="utf-8")
 
-                    lastid = len(tris) - 1
-                    """
-                    
-                    
-                    
-                    
-
-                    # Trouver le volume
-                    volume = root.find(".//volume")
-                    if volume is not None:
-                        volume.set("firstid", "0")
-                        volume.set("lastid", str(lastid))
-
-                    # Reconvertir
-                    fixed = ET.tostring(root, encoding="utf-8")
-                    zout.writestr(name, fixed)
-                    continue
+                    # Reconvertir le modèle
+                    merged = ET.tostring(root, encoding="utf-8")
 
                 except Exception as e:
-                    print("⚠️ Erreur lors de la correction du volume Metadata :", e)
+                    print("⚠️ Erreur lors de la correction des transforms/Metadata QidiSlicer :", e)
 
-
-
+                zout.writestr(name, merged)
+                continue
 
             # ------------------------------------------------------------
-            # 2) Tous les autres fichiers sont recopiés tels quels
+            # 2) Écriture du Metadata corrigé au bon moment
+            # ------------------------------------------------------------
+            if name == meta_name:
+                if corrected_metadata is not None:
+                    zout.writestr(name, corrected_metadata)
+                else:
+                    zout.writestr(name, data)
+                continue
+
+            # ------------------------------------------------------------
+            # 3) Tous les autres fichiers sont recopiés tels quels
             # ------------------------------------------------------------
             zout.writestr(name, data)
+
+
 
 
 
@@ -1845,7 +1829,6 @@ def reset_item_transform(model_data, center=(PLATEAU_X, PLATEAU_Y, PLATEAU_Z)):
 
 
 
-
 # Recentre les sommets en XY et calcule le decal_z pour placement correct
 def recenter_vertices(model_data, slicer_target, slicer_source, fc_3mf_existed_at_start, center_x = 0, center_y = 0):
     """
@@ -1886,7 +1869,6 @@ def recenter_vertices(model_data, slicer_target, slicer_source, fc_3mf_existed_a
     except Exception as e:
         print("⚠️ Erreur dans recenter_vertices :", e)
         return model_data, decal_z
-
 
 
 def recentrer_3mf_fichier(file_path, slicer_target, slicer_source, fc_3mf_existed_at_start, center_x, center_y):
@@ -1931,7 +1913,6 @@ def recentrer_3mf_fichier(file_path, slicer_target, slicer_source, fc_3mf_existe
         for name, data in buffer.items():
             zout.writestr(name, data)
     return True
-
 
 
 
@@ -2048,50 +2029,51 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
     tmp_new = base_name + ".new.3mf"
 
     # On ouvre l'ancien 3MF et on prépare le nouveau
-    with zipfile.ZipFile(old_3mf, 'r') as old_zip, \
-         zipfile.ZipFile(tmp_new, 'w', compression=zipfile.ZIP_DEFLATED) as new_zip:
-
-        names = old_zip.namelist()
-
-        # Détection multi-objets : uniquement si un vrai .model existe dans 3D/Objects/
-        has_objects = any(
-            n.startswith("3D/Objects/") and n.endswith(".model")
-            for n in names
-        )
 
 
-        if slicer_source != "qidislicer": 
-            # ------------------------------------------------------------
-            # CAS MULTI-OBJETS (QidiStudio, Prusa, Orca…)
-            # ------------------------------------------------------------
-            if DEBUG: print(">> Multi-object structure detected → multi-object injection")
+    if slicer_source != "qidislicer":
 
-            for info in old_zip.infolist():
-                name = info.filename
-                data = old_zip.read(name)
+        with zipfile.ZipFile(old_3mf, 'r') as old_zip, \
+             zipfile.ZipFile(tmp_new, 'w', compression=zipfile.ZIP_DEFLATED) as new_zip:
 
-                # 1) Remplacement du modèle principal
-                if name == keep_model:
-                    merged = replace_mesh_in_model_xml(data, geom_data_centered)
-                    merged = force_zmax_in_transform(merged, decal_z)
+            names = old_zip.namelist()
 
-                    new_zip.writestr(name, merged)
-                    continue
 
-                # 2) Suppression des autres objets
-                if name.startswith("3D/Objects/") and name.endswith(".model"):
-                    continue
+            #if slicer_source != "qidislicer": 
+            if slicer_source == "qidistudio":
+                # CAS MULTI-OBJETS famille qidistudio
 
-                # 3) Transformations globales (3dmodel.model)
-                if name.endswith("3dmodel.model"):
-                    data = force_zmax_in_transform(data, decal_z)
+                # ------------------------------------------------------------
+                # CAS MULTI-OBJETS (QidiStudio, Prusa, Orca…)
+                # ------------------------------------------------------------
+                if DEBUG: print(">> Multi-object structure detected → multi-object injection")
+
+                for info in old_zip.infolist():
+                    name = info.filename
+                    data = old_zip.read(name)
+
+                    # 1) Remplacement du modèle principal
+                    if name == keep_model:
+                        merged = replace_mesh_in_model_xml(data, geom_data_centered)
+                        merged = force_zmax_in_transform(merged, decal_z)
+
+                        new_zip.writestr(name, merged)
+                        continue
+
+                    # 2) Suppression des autres objets
+                    if name.startswith("3D/Objects/") and name.endswith(".model"):
+                        continue
+
+                    # 3) Transformations globales (3dmodel.model)
+                    if name.endswith("3dmodel.model"):
+                        data = force_zmax_in_transform(data, decal_z)
+                        new_zip.writestr(name, data)
+                        continue
+                    
+                    # 5) Recopie du reste
                     new_zip.writestr(name, data)
-                    continue
-                
-                # 5) Recopie du reste
-                new_zip.writestr(name, data)
 
-  
+      
     # ------------------------------------------------------------
     # CAS QIDISLICER (mono-objet)
     # ------------------------------------------------------------
@@ -2104,6 +2086,75 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
             geom_data_centered,
             decal_z
         )
+
+
+    elif slicer_source in ("slic3r", "cura", "freecad"):
+        if DEBUG: print(">> Mono-object slicer → simple mesh replacement")
+
+        with zipfile.ZipFile(old_3mf, 'r') as old_zip, \
+             zipfile.ZipFile(tmp_new, 'w', compression=zipfile.ZIP_DEFLATED) as new_zip:
+
+            for info in old_zip.infolist():
+                name = info.filename
+                data = old_zip.read(name)
+
+                if name.endswith("3dmodel.model"):
+                    merged = replace_mesh_in_model_xml(data, geom_data_centered)
+                    merged = force_zmax_in_transform(merged, decal_z)
+                    new_zip.writestr(name, merged)
+                    continue
+
+                #new_zip.writestr(name, data)
+                
+                
+                            
+                            
+                            
+                # --- Correctif Metadata Prusa/Slic3r ---
+                if name == "Metadata/Slic3r_PE_model.config":
+                    try:
+                        root = ET.fromstring(data)
+                        new_root = ET.fromstring(geom_data_centered)
+
+                        # Namespace dynamique
+                        if "}" in new_root.tag:
+                            ns_uri = new_root.tag.split("}")[0].strip("{")
+                            ns_tri = {"m": ns_uri}
+                            tris = new_root.findall(".//m:triangle", ns_tri)
+                        else:
+                            tris = new_root.findall(".//triangle")
+
+                        lastid = len(tris) - 1
+
+                        volume = root.find(".//volume")
+                        if volume is not None:
+                            volume.set("firstid", "0")
+                            volume.set("lastid", str(lastid))
+
+                        fixed = ET.tostring(root, encoding="utf-8")
+                        new_zip.writestr(name, fixed)
+                        continue
+
+                    except Exception as e:
+                        print("⚠️ Erreur correctif Metadata Prusa :", e)
+                        # En cas d'erreur, on recopie brut
+                        new_zip.writestr(name, data)
+                        continue
+
+                # --- Recopie brute pour tous les autres fichiers ---
+                new_zip.writestr(name, data)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
     # ------------------------------------------------------------
