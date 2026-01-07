@@ -1356,7 +1356,7 @@ def replace_mesh_in_model_xml(old_model_xml_bytes, new_model_xml_bytes):
 
 
 def inject_geometry_into_qidi_3mf(old_3mf_path, new_3mf_path, new_model_xml_bytes,
-                                   decal_z=0):
+                                   decal_z, ignore_transform):
     """
     Construit un nouveau 3MF Qidi en remplaçant le <mesh> dans 3D/3dmodel.model
     et en corrigeant le transform en fonction de la rotation réelle du mesh.
@@ -1401,8 +1401,30 @@ def inject_geometry_into_qidi_3mf(old_3mf_path, new_3mf_path, new_model_xml_byte
                     # Corriger les transforms
                     items = root.findall(item_xpath, ns)
                     if DEBUG: t0 = time.time()
+
+
+
                     for item in items:
+
+                        # ------------------------------------------------------------
+                        # A2 : Neutralisation complète des transforms si demandé
+                        # ------------------------------------------------------------
+                        if ignore_transform:
+                            # Matrice identité 4×4 (Qidi utilise une matrice 4x3 dans l'attribut transform)
+                            if ignore_transform:
+                                Xc = PLATEAU_X / 2
+                                Yc = PLATEAU_Y / 2
+                                identity_centered = f"1 0 0 0 1 0 0 0 1 {Xc} {Yc} 0"
+                                print('DEBUG identity_centered',identity_centered)
+
+                                item.set("transform", identity_centered)
+                        # Correction du Z (toujours nécessaire)
                         correct_item_transform_z(new_model_xml_bytes, item)
+
+
+
+
+
                     if DEBUG: print("[DEBUG TIME] correct_item_transform_z =", time.time() - t0, "s")
                     # ------------------------------------------------------------
                     # Correctif Metadata QidiSlicer
@@ -1951,8 +1973,8 @@ def recentrer_3mf_fichier(file_path, slicer_target, slicer_source, fc_3mf_existe
 
 
 
-def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existed_at_start,
-                                slicer_path):
+def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existed_at_start, 
+                                slicer_path, ignore_transform):
     """
     Injection géométrique dans un fichier 3MF existant.
     """
@@ -2118,7 +2140,8 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
             old_3mf,
             tmp_new,
             geom_data_centered,
-            decal_z
+            decal_z,
+            ignore_transform
         )
 
 
@@ -2357,7 +2380,7 @@ def export_replace_geometry():
       
     if inject_geometry_if_possible(
         base_name, fc_3mf, old_3mf_backup, fc_3mf_existed_at_start,
-        slicer_path
+        slicer_path, ignore_transform
     ) == 'cancel' :
         return
    
