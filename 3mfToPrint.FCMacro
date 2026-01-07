@@ -118,6 +118,8 @@ TRANSLATIONS = {
         "linear_label": "Précision (LinearDeflection) entre 0.01 et 10. Haute qualité : 0.01",
         "angular_label": "Tolérance angulaire (AngularDeflection) en degrés (ex: 3)",
         "external_actions": "Actions externes à exécuter avant fermeture :",
+        "ignore_transform": "Ne pas récupérer la position/rotation du slicer",
+
 
         # Messages d'erreur / avertissement
         "error_no_doc": "❌ Aucun document ouvert dans FreeCAD.",
@@ -177,6 +179,9 @@ TRANSLATIONS = {
         "hint_generate_stl": "Génère aussi un fichier STL en plus du 3MF.",
         "hint_launch_slicer": "Lance automatiquement le slicer après export si le chemin est valide.",
         "ini_file_label": "Fichier ini :",
+        "hint_ignore_transform": "Si coché, la position XY et la rotation du slicer ne seront pas récupérées.\n"
+                         "L'objet sera replacé droit et recentré sur le plateau.",
+
 
     },
 
@@ -200,6 +205,8 @@ TRANSLATIONS = {
         "linear_label": "Precision (LinearDeflection) between 0.01 and 10. High quality: 0.01",
         "angular_label": "Angular tolerance (AngularDeflection) in degrees (e.g. 3)",
         "external_actions": "External actions to execute before closing:",
+        "ignore_transform": "Do not recover slicer position/rotation",
+
 
         # Error / warning messages
         "error_no_doc": "❌ No document open in FreeCAD.",
@@ -259,6 +266,9 @@ TRANSLATIONS = {
         "hint_generate_stl": "Also generates an STL file along with the 3MF.",
         "hint_launch_slicer": "Automatically launches the slicer after export if the path is valid.",
         "ini_file_label": "INI file:",
+        "hint_ignore_transform": "If checked, the slicer's XY position and rotation will not be recovered.\n"
+                         "The object will be placed upright and centered on the build plate.",
+
 
     }
 }
@@ -292,7 +302,6 @@ def get_user_language():
 def tr(key):
     lang = get_user_language()
     return TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key, key)
-
 
 # -------------------------
 # Utilitaires UI / config
@@ -390,8 +399,6 @@ def ask_user_options(current_slicer, current_linear, current_angular):
     layout = QtGui.QVBoxLayout()
 
     # Cases principales
-
-
     chk_stl = QtGui.QCheckBox(tr("generate_stl"))
     chk_stl.setToolTip(tr("hint_generate_stl"))
     chk_stl.setChecked(False)
@@ -401,8 +408,16 @@ def ask_user_options(current_slicer, current_linear, current_angular):
     chk_reset.setToolTip(tr("hint_reset_all"))
     chk_reset.setChecked(False)
     layout.addWidget(chk_reset)
-
     layout.addWidget(chk_stl)
+    
+    # Nouvelle case : ignorer la position/rotation du slicer
+    chk_ignore_transform = QtGui.QCheckBox(tr("ignore_transform"))
+    chk_ignore_transform.setToolTip(tr("hint_ignore_transform"))
+
+    chk_ignore_transform.setChecked(False)
+    layout.addWidget(chk_ignore_transform)
+
+    
 
     # Ligne combinée : case "Lancer le slicer" + champ chemin
     h_slicer = QtGui.QHBoxLayout()
@@ -502,12 +517,13 @@ def ask_user_options(current_slicer, current_linear, current_angular):
             linear_val,
             angular_rad,
             chk_reset.isChecked(),
-            [(chk.isChecked(), cmd, delay) for chk, cmd, delay in extra_checks]
+            chk_ignore_transform.isChecked(),
+            [(chk.isChecked(), cmd, delay) for chk, cmd, delay in extra_checks],
         )
 
 
     else:
-        return (None, None, None, None, None, None, [])
+        return (None, None, None, None, None, None, None, [])
 
 
 # -------------------------
@@ -1587,7 +1603,8 @@ def get_user_options(cfg):
         # Appel de la boîte de dialogue utilisateur
         (generate_stl,
          slicer_path, launch_slicer,
-         linear_value, angular_value, reset_all, extra_cmds) = ask_user_options(
+         linear_value, angular_value, reset_all, 
+         ignore_transform, extra_cmds) = ask_user_options(
             slicer_path_pref, linear_pref, angular_pref
         )
 
@@ -1613,9 +1630,17 @@ def get_user_options(cfg):
         slicer_path=slicer_path
     )
 
-    return (generate_stl, 
-            slicer_path, launch_slicer,
-            linear_value, angular_value, reset_all, extra_cmds)
+    return (
+        generate_stl,
+        slicer_path,
+        launch_slicer,
+        linear_value,
+        angular_value,
+        reset_all,
+        ignore_transform,
+        extra_cmds
+    )
+
 
 
 def export_freecad_files(selection, base_name, fc_3mf, generate_stl,
@@ -2272,7 +2297,7 @@ def export_replace_geometry():
 
     (generate_stl,
      slicer_path, launch_slicer,
-     linear_value, angular_value, reset_all, extra_cmds) = opts
+     linear_value, angular_value, reset_all, ignore_transform, extra_cmds) = opts
      
      
     # Si l'utilisateur veut repartir de zéro
