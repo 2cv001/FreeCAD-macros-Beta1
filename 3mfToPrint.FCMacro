@@ -1877,6 +1877,8 @@ def recenter_vertices(model_data, slicer_target, slicer_source, fc_3mf_existed_a
         return model_data, decal_z
 
 
+
+
 def recentrer_3mf_fichier(file_path, slicer_target, slicer_source, fc_3mf_existed_at_start, center_x, center_y):
     """
     Ouvre un fichier 3MF, recentre les sommets du fichier 3D/3dmodel.model
@@ -2072,6 +2074,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
     """
     if DEBUG: print('inject_geometry_if_possible') 
 
+
     # ------------------------------------------------------------
     # 1) Vérifier si injection possible
     # ------------------------------------------------------------
@@ -2173,9 +2176,17 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
     with zipfile.ZipFile(fc_3mf, 'r') as fc_zip:
         geom_data = fc_zip.read(geom_entry)
 
-    geom_data_centered, decal_z = recenter_vertices(
-        geom_data, slicer_target, slicer_source, fc_3mf_existed_at_start
-    )
+
+    if slicer_target != "qidistudio":
+        geom_data_centered, decal_z = recenter_vertices(
+            geom_data, slicer_target, slicer_source, fc_3mf_existed_at_start
+        )
+    else:
+        geom_data_centered = geom_data
+        decal_z = 0
+
+
+
 
     # ------------------------------------------------------------
     # 7) Reconstruction du 3MF final
@@ -2302,7 +2313,66 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
 
 
 
-def clean_final_qidislicer(fc_3mf, base_name):
+
+
+
+
+
+def apply_transform_centering(fc_3mf):
+    """
+    Recentre réellement le mesh :
+    - lit le .model
+    - recentre les vertex via recenter_vertices()
+    - corrige Zmin
+    - réécrit le 3MF avec les vertex corrigés
+    """
+    import zipfile
+    import xml.etree.ElementTree as ET
+    import shutil
+    import os
+    print("DEBUG: apply_transform_centering CALLED")
+
+    # 1) Trouver le fichier .model
+    with zipfile.ZipFile(fc_3mf, 'r') as zin:
+        model_file = None
+        for name in zin.namelist():
+            if name.startswith("3D/Objects/") and name.endswith(".model"):
+                model_file = name
+                break
+
+        if not model_file:
+            print("⚠️ Aucun fichier .model trouvé dans le 3MF")
+            return
+
+        model_data = zin.read(model_file)
+
+    # 2) Recentre les vertex (TA fonction)
+    new_model_data, decal_z = recenter_vertices(
+        model_data,
+        slicer_target="qidistudio",
+        slicer_source="qidistudio",
+        fc_3mf_existed_at_start=True,
+        center_x=0,
+        center_y=0
+    )
+
+    # 3) Réécrire le 3MF avec les vertex corrigés
+    tmp = fc_3mf + ".tmp"
+    with zipfile.ZipFile(fc_3mf, 'r') as zin, zipfile.ZipFile(tmp, 'w') as zout:
+        for item in zin.infolist():
+            if item.filename == model_file:
+                zout.writestr(item, new_model_data)
+            else:
+                zout.writestr(item, zin.read(item.filename))
+
+    shutil.move(tmp, fc_3mf)
+
+
+
+
+
+
+def clean_final_qidistudioFamily(fc_3mf, base_name):
     """
     Nettoyage final complet pour QidiStudio/QidiSlicer :
     - nettoyage structurel
@@ -2476,27 +2546,26 @@ def export_replace_geometry():
         slicer_path, ignore_transform
     ) == 'cancel' :
         return
-   
+       
 
-    #-----------------------------------------------------------------------------
-    # Derniers traitements sur le fichier fc_3mf avant lancement du slicer
-    #----------------------------------------------------------------------------
- 
-    # ------------------------------------------------------------
-    # Nettoyage FINAL pour QidiStudio (namespaces, p:path, etc.)
-    # ------------------------------------------------------------
-    if (
-        slicer_target == "qidistudio"
-        and slicer_source == "qidistudio"
-        and fc_3mf_existed_at_start
-        and os.path.exists(fc_3mf)
-        and zip_contains_real_mesh(fc_3mf)
-    ):
-        print(">>> CLEANING FINAL test.3mf BEFORE SLICER <<<")
-        clean_final_qidislicer(fc_3mf, base_name)
-    else:
-        if DEBUG:
-            print(">>> SKIP FINAL CLEANING (conditions non remplies) <<<")
+
+
+
+    # --- QidiStudioFamily ---
+    if slicer_target == "qidistudio":
+
+        if ignore_transform: 
+            apply_transform_centering(fc_3mf)
+        if slicer_source == "qidistudio" and fc_3mf_existed_at_start:
+            clean_final_qidistudioFamily(fc_3mf, base_name)
+        
+
+
+
+
+
+
+
 
 
 
