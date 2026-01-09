@@ -1,8 +1,7 @@
 
 
 
-#VERSION QUI MARCHE : case à cocher pour qidislicer anulation position plateau : ok
-#mais pass pour qidislicer
+#VERSION QUI MARCHE : case à cocher pour qidislicer et qidistudio anulation position plateau : ok
 
 
 
@@ -1087,47 +1086,7 @@ def clean_multi_object_style(src_3mf, dst_3mf, mode="qidi"):
         
         
         
-        
-        
-        
-        
-        # --- 2bis) PATCH MINIMAL : préserver les namespaces QidiStudio ---
-        # Ce patch empêche le plateau vide en conservant les namespaces et attributs
-        # essentiels que QidiStudio exige pour reconnaître un modèle valide.
-
-        # 1) Récupération des namespaces d'origine
-        #    (ElementTree les perd si on réécrit le XML)
-        nsmap = {}
-        try:
-            for event, elem in ET.iterparse(src_3mf, events=("start-ns",)):
-                prefix, uri = elem
-                nsmap[prefix] = uri
-        except Exception as e:
-            print("⚠️ Impossible de lire les namespaces :", e)
-
-        # 2) S'assurer que les namespaces QidiStudio sont présents
-        if "QIDIStudio" not in nsmap:
-            nsmap["QIDIStudio"] = "http://schemas.qiditech.com/package/2021"
-
-        if "p" not in nsmap:
-            nsmap["p"] = "http://schemas.microsoft.com/3dmanufacturing/production/2015/06"
-
-        # 3) Réinjecter les namespaces dans la racine du XML
-        try:
-            root = ET.fromstring(model_txt)
-            for prefix, uri in nsmap.items():
-                if prefix:  # éviter le namespace par défaut
-                    root.set(f"xmlns:{prefix}", uri)
-
-            # 4) requiredextensions="p" doit être cohérent
-            root.set("requiredextensions", "p")
-
-            # 5) Réécriture du XML patché dans model_txt
-            model_txt = ET.tostring(root, encoding="unicode")
-
-        except Exception as e:
-            print("⚠️ PATCH NAMESPACE : impossible de parser le XML, on laisse tel quel :", e)
-
+    
         
         
         
@@ -1140,13 +1099,23 @@ def clean_multi_object_style(src_3mf, dst_3mf, mode="qidi"):
         
         
         
-        
-
+        """
         # Détection du parent réel
         parent_pattern = (
             rf'<object[^>]*id="(\d+)"[^>]*>[\s\S]*?'
             rf'<component[^>]*p:path="/{keep_model}"'
         )
+        """
+        
+                
+        parent_pattern = (
+            rf'<object[^>]*id="(\d+)"[^>]*>[\s\S]*?'
+            rf'<component[^>]*(?:p|ns\d*):path="/{keep_model}"'
+        )
+             
+                
+        
+        
         m = re.search(parent_pattern, model_txt)
 
         if not m:
@@ -1361,6 +1330,60 @@ def clean_prusa_style(src_3mf, dst_3mf):
     if DEBUG: print(f"➡️ Fichier nettoyé : {dst_3mf}")
 
     return keep_object_id, model_path
+
+
+def clean_namespaces_final(fc_3mf):
+    """
+    Nettoyage FINAL des namespaces pour QidiStudio.
+    Version TEXTE (pas de XML parsing).
+    """
+
+    import zipfile
+    import os
+    import shutil
+    import re
+
+    tmp = fc_3mf + ".nsfix"
+
+    with zipfile.ZipFile(fc_3mf, "r") as zin, \
+         zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+
+        for item in zin.infolist():
+            name = item.filename
+
+            if name == "3D/3dmodel.model":
+                txt = zin.read(name).decode("utf-8")
+
+                # 1) Ajouter xmlns:p et xmlns:QIDIStudio si absents
+                if "xmlns:p=" not in txt:
+                    txt = txt.replace(
+                        "<model ",
+                        '<model xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" '
+                    )
+
+                if "xmlns:QIDIStudio=" not in txt:
+                    txt = txt.replace(
+                        "<model ",
+                        '<model xmlns:QIDIStudio="http://schemas.qiditech.com/package/2021" '
+                    )
+
+                # 2) Remplacer nsX:path → p:path
+                txt = re.sub(r'ns\d*:path=', 'p:path=', txt)
+
+                # 3) Remplacer nsX:UUID → p:UUID
+                txt = re.sub(r'ns\d*:UUID=', 'p:UUID=', txt)
+
+                # 4) requiredextensions="p"
+                txt = re.sub(r'requiredextensions="[^"]*"', 'requiredextensions="p"', txt)
+
+                zout.writestr(name, txt)
+                continue
+
+            # Recopie du reste
+            zout.writestr(name, zin.read(name))
+
+    os.remove(fc_3mf)
+    shutil.move(tmp, fc_3mf)
 
 
 
@@ -2279,6 +2302,26 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
 
 
 
+def clean_final_qidislicer(fc_3mf, base_name):
+    """
+    Nettoyage final complet pour QidiStudio/QidiSlicer :
+    - nettoyage structurel
+    - remplacement du fichier
+    - nettoyage des namespaces
+    """
+
+    tmp_cleaned = base_name + ".finalclean.3mf"
+
+    # 1) Nettoyage structurel
+    clean_multi_object_style(fc_3mf, tmp_cleaned, mode="qidi")
+
+    # 2) Remplacement du fichier final
+    if os.path.exists(fc_3mf):
+        os.remove(fc_3mf)
+    shutil.move(tmp_cleaned, fc_3mf)
+
+    # 3) Nettoyage des namespaces
+    clean_namespaces_final(fc_3mf)
 
 
 
@@ -2438,6 +2481,24 @@ def export_replace_geometry():
     #-----------------------------------------------------------------------------
     # Derniers traitements sur le fichier fc_3mf avant lancement du slicer
     #----------------------------------------------------------------------------
+ 
+    # ------------------------------------------------------------
+    # Nettoyage FINAL pour QidiStudio (namespaces, p:path, etc.)
+    # ------------------------------------------------------------
+    if (
+        slicer_target == "qidistudio"
+        and slicer_source == "qidistudio"
+        and fc_3mf_existed_at_start
+        and os.path.exists(fc_3mf)
+        and zip_contains_real_mesh(fc_3mf)
+    ):
+        print(">>> CLEANING FINAL test.3mf BEFORE SLICER <<<")
+        clean_final_qidislicer(fc_3mf, base_name)
+    else:
+        if DEBUG:
+            print(">>> SKIP FINAL CLEANING (conditions non remplies) <<<")
+
+
 
     
     if slicer_target in ['cura'] and slicer_source not in ['cura']:
@@ -2449,6 +2510,14 @@ def export_replace_geometry():
         #Ajout d'une directive pour que cura plaque l'ojjet sur le plateau.
         #Et du coup on doit pouvoir retirer le cacul du décalage en z
         patch_drop_to_buildplate_in_place(fc_3mf)
+        
+        
+        
+        
+        
+        
+        
+        
     # ------------------------------------------------------------
     # 6) Lancement du slicer
     # ------------------------------------------------------------
