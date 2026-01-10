@@ -1911,7 +1911,10 @@ def apply_common_transform_to_3dmodel(model_xml_bytes, geom_data_centered, ignor
     - correction du Z réel
     - uniquement dans 3D/3dmodel.model
     """
+    if not ignore_transform: 
+        return
     print('<<Début apply_common_transform_to_3dmodel (annulation rotation et centrage)>>')
+
     try:
         root = ET.fromstring(model_xml_bytes)
 
@@ -1929,7 +1932,7 @@ def apply_common_transform_to_3dmodel(model_xml_bytes, geom_data_centered, ignor
         for item in items:
 
             # Neutralisation + centrage
-            if ignore_transform:
+            if ignore_transform :
                 Xc = PLATEAU_X / 2
                 Yc = PLATEAU_Y / 2
                 identity_centered = f"1 0 0 0 1 0 0 0 1 {Xc} {Yc} 0"
@@ -2187,14 +2190,24 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
         geom_data = fc_zip.read(geom_entry)
 
 
-    if slicer_target != "qidistudio":
-        geom_data_centered, decal_z = recenter_vertices(
-            geom_data
-        )
-    else:
+
+
+    if slicer_target == "qidistudio":
+        # QidiStudio : pas de recentrage ici, il sera fait dans le bloc 6
         geom_data_centered = geom_data
         decal_z = 0
+    else:
+        # Tous les autres slicers gardent l'ancien recentrage
+        geom_data_centered, decal_z = recenter_vertices(geom_data)
 
+    # ------------------------------------------------------------
+    # 6 bis) Recentrage final pour QidiSlicer (préparation migration)
+    # ------------------------------------------------------------
+    if slicer_source == "qidislicer":
+        geom_data_centered_final, decal_z_final = recenter_vertices(geom_data)
+    else:
+        geom_data_centered_final = geom_data
+        decal_z_final = 0
 
 
 
@@ -2207,13 +2220,14 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
     # CAS QIDISLICER (mono-objet)
     # ------------------------------------------------------------
     if slicer_source == "qidislicer":
-        inject_geometry_into_qidislicer_3mf (
+        inject_geometry_into_qidislicer_3mf(
             old_3mf,
             tmp_new,
-            geom_data_centered,
-            decal_z,
+            geom_data_centered_final,
+            decal_z_final,
             ignore_transform
         )
+
 
         # Remplacement final
         gc.collect()
@@ -2377,6 +2391,52 @@ def recenter_vertices_in_place(fc_3mf):
 
 
 
+
+##########################NOUVEAU
+def recenter_model_in_3mf(fc_3mf, model_path, center_x=0, center_y=0):
+    """
+    Recentre un fichier .model dans un 3MF, quel que soit son chemin.
+    """
+    import zipfile, shutil, os
+
+    if not os.path.exists(fc_3mf):
+        print("❌ Fichier introuvable :", fc_3mf)
+        return False
+
+    # Lire le contenu du 3MF
+    with zipfile.ZipFile(fc_3mf, 'r') as zin:
+        buffer = {name: zin.read(name) for name in zin.namelist()}
+
+    if model_path not in buffer:
+        print(f"❌ {model_path} introuvable dans le 3MF")
+        return False
+
+    # Recentrage géométrique
+    new_model_data, decal_z = recenter_vertices(
+        buffer[model_path],
+        center_x=center_x,
+        center_y=center_y
+    )
+
+    # Remplacement
+    buffer[model_path] = new_model_data
+
+    # Réécriture du 3MF
+    tmp = fc_3mf + ".tmp"
+    with zipfile.ZipFile(tmp, 'w') as zout:
+        for name, data in buffer.items():
+            zout.writestr(name, data)
+
+    shutil.move(tmp, fc_3mf)
+    return True
+
+
+def recenter_model_in_3d_3dmodel(fc_3mf, center_x=0, center_y=0):
+    return recenter_model_in_3mf(fc_3mf, "3D/3dmodel.model", center_x, center_y)
+
+
+def recenter_model_in_3d_objects(fc_3mf, center_x=0, center_y=0):
+    return recenter_model_in_3mf(fc_3mf, "3D/Objects/object_1.model", center_x, center_y)
 
 
 def clean_final_qidistudioFamily(fc_3mf, base_name):
@@ -2555,14 +2615,34 @@ def export_replace_geometry():
     ) == 'cancel' :
         return
        
-
+    # ------------------------------------------------------------
+    # 6) Recentrage des verices
+    # ------------------------------------------------------------
 
     if slicer_target == "qidistudio":
-        # QidiStudio : recentrage des vertices TOUJOURS (comme dans l’ancienne version)
-        recenter_vertices_in_place(fc_3mf)
-
+        #recenter_vertices_in_place(fc_3mf)
+        recenter_model_in_3d_objects(fc_3mf)
         if slicer_source == "qidistudio" and fc_3mf_existed_at_start:
             clean_final_qidistudioFamily(fc_3mf, base_name)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
