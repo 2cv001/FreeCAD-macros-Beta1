@@ -149,8 +149,11 @@ TRANSLATIONS = {
             "• Restaurer l'ancien fichier 3MF du slicer\n"
             "• Supprimer le 3MF exporté par FreeCAD et repartir comme un nouveau projet\n"
             "• Annuler",
+        "warn_empty_plate_title": "Plateau vide",
         "btn_restore_old_3mf": "Restaurer l'ancien 3MF",
         "btn_reset_new_project": "Repartir à zéro",
+
+
 
 
 
@@ -228,8 +231,7 @@ TRANSLATIONS = {
             "The original 3MF file was created by: {source}\n"
             "The selected target slicer is:        {target}\n\n"
             "These slicers are not identical.\n"
-            "Continue by deleting the 3MF file, without recovering the print settings?\n\n",
-                    
+            "Continue by deleting the 3MF file, without recovering the print settings?\n\n",                 
         "warn_empty_plate":
             "⚠️ The slicer's 3MF file contains no objects and cannot be used as a base.\n"
             "This often happens after deleting objects inside the slicer.\n\n"
@@ -237,6 +239,7 @@ TRANSLATIONS = {
             "• Restore the previous 3MF file from the slicer\n"
             "• Delete the 3MF exported by FreeCAD and start a new project\n"
             "• Cancel",
+        "warn_empty_plate_title": "Empty build plate",    
         "btn_restore_old_3mf": "Restore previous 3MF",
         "btn_reset_new_project": "Start a new project",
 
@@ -546,8 +549,10 @@ def detect_slicer_target_from_path(path):
         return "qidistudio"
 
     # # Prusa / SuperSlicer (multi-objets standard Slic3r)
+    
     if any(x in p for x in ("prusa", "super")):
         return "slic3r"
+
               
     # Cura
     if "cura" in p:
@@ -836,7 +841,7 @@ def export_selection_with_deflection(selection, out_3mf_path,
         doc.recompute()
 
 
-# Force uniquement la composante Z des transformations dans le modèle 3MF
+
 def force_zmax_in_transform(model_data, decalz):
     """
     Remplace uniquement la composante Z (12e valeur) du transform des <item> dans 3dmodel.model.
@@ -924,122 +929,8 @@ def correct_item_transform_z(model_data_centered, item_element):
     item_element.attrib["transform"] = " ".join(f"{v:.6f}" for v in new_values)
 
 
-def clean_qidi_style(src_3mf, dst_3mf):
-    """
-    Nettoie un 3MF QidiSlicer moderne (Cura-like).
-    - Garde uniquement le premier <object> et son <item> dans 3D/3dmodel.model
-    - Supprime les autres objets et items
-    - Nettoie Metadata/Slic3r_PE_model.config pour ne garder que l'objet conservé
-    - Garantit la présence du fichier 3D/_rels/3dmodel.model.rels
-    """
 
-    model_path = "3D/3dmodel.model"
-    rels_path = "3D/_rels/3dmodel.model.rels"
-    config_path = "Metadata/Slic3r_PE_model.config"
-    
-    
-    if not os.path.exists(src_3mf):
-        print(' dans clean_qidi_style fichier src_3mf inexistant',src_3mf)
-
-    with zipfile.ZipFile(src_3mf, "r") as zin:
-        # --- Nettoyage du 3dmodel.model ---
-        model_xml = zin.read(model_path).decode("utf-8")
-        root = ET.fromstring(model_xml)
-        ns = {"m": "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"}
-
-        objects = root.findall("m:resources/m:object", ns)
-        items = root.findall("m:build/m:item", ns)
-
-        keep_object_id = None
-        removed_ids = []
-
-        if objects:
-            keep_object_id = objects[0].attrib.get("id")
-
-        # Supprimer les objets excédentaires
-        for obj in objects[1:]:
-            removed_ids.append(obj.attrib.get("id"))
-            root.find("m:resources", ns).remove(obj)
-
-        # Supprimer les items excédentaires
-        for item in items:
-            if item.attrib.get("objectid") != keep_object_id:
-                removed_ids.append(item.attrib.get("objectid"))
-                root.find("m:build", ns).remove(item)
-
-        new_model_xml = ET.tostring(root, encoding="utf-8")
-
-        # --- Nettoyage du Slic3r_PE_model.config ---
-        if config_path in zin.namelist():
-            cfg_xml = zin.read(config_path).decode("utf-8")
-            cfg_root = ET.fromstring(cfg_xml)
-
-            for obj in cfg_root.findall("object"):
-                if obj.attrib.get("id") != keep_object_id:
-                    removed_ids.append(obj.attrib.get("id"))
-                    cfg_root.remove(obj)
-
-            new_cfg_xml = ET.tostring(cfg_root, encoding="utf-8")
-        else:
-            new_cfg_xml = None
-
-        # --- Réécriture du ZIP nettoyé ---
-        
-        if not os.path.exists(src_3mf):
-            print(' dans clean_qidi_style fichier src_3mf inexistant',src_3mf)        
-        
-        
-        with zipfile.ZipFile(dst_3mf, "w", compression=zipfile.ZIP_DEFLATED) as zout:
-            for item in zin.infolist():
-                name = item.filename
-                if name == model_path:
-                    zout.writestr(name, new_model_xml)
-                    continue
-                if name == config_path and new_cfg_xml:
-                    zout.writestr(name, new_cfg_xml)
-                    continue
-                zout.writestr(name, zin.read(name))
-
-            # Garantir la présence du rels
-            if rels_path not in zin.namelist():
-                rels_content = """<?xml version='1.0' encoding='UTF-8'?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
- <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel" />
-</Relationships>
-"""
-                zout.writestr(rels_path, rels_content)
-
-    if DEBUG: print(f"✅ Nettoyage QidiSlicer terminé. Objet conservé id={keep_object_id}")
-    if removed_ids:
-        if DEBUG: print(f"   Objets supprimés : {removed_ids}")
-    else:
-        if DEBUG: print("   Aucun objet supprimé (mono-objet déjà).")
-    if DEBUG: print(f"   Fichier nettoyé : {dst_3mf}")
-
-
-############################################################################ clean_metadata_for_qidi plus utilisée
-def clean_metadata_for_qidi(path_3mf):
-    tmp_clean = path_3mf + ".clean"
-
-    with zipfile.ZipFile(path_3mf, 'r') as zin, \
-         zipfile.ZipFile(tmp_clean, 'w', compression=zipfile.ZIP_DEFLATED) as zout:
-
-        for item in zin.infolist():
-            name = item.filename
-
-            # On garde uniquement Metadata/Application
-            if name.startswith("Metadata/") and name != "Metadata/Application":
-                continue
-
-            zout.writestr(name, zin.read(name))
-
-    os.remove(path_3mf)
-    os.rename(tmp_clean, path_3mf)
-
-
-
-
-def clean_multi_object_style(src_3mf, dst_3mf, mode="qidi"):
+def clean_multi_object_style(src_3mf, dst_3mf):
     """
     Nettoyage CHIRURGICAL d'un 3MF QidiStudio.
     Version corrigée + PATCH chemins :
@@ -1196,8 +1087,11 @@ def clean_multi_object_style(src_3mf, dst_3mf, mode="qidi"):
         # --- 5) Réécriture du ZIP ---
         print("📦 Réécriture du fichier nettoyé…")
 
-        compression = zipfile.ZIP_STORED if mode == "qidi" else zipfile.ZIP_DEFLATED
-        with zipfile.ZipFile(dst_3mf, "w", compression=compression) as zout:
+        #compression = zipfile.ZIP_STORED if mode == "qidi" else zipfile.ZIP_DEFLATED
+        #with zipfile.ZipFile(dst_3mf, "w", compression=compression) as zout:
+        with zipfile.ZipFile(dst_3mf, "w", compression=zipfile.ZIP_STORED) as zout:
+
+
             for item in zin.infolist():
                 name = item.filename.strip().replace("\\", "/")
 
@@ -1225,6 +1119,103 @@ def clean_multi_object_style(src_3mf, dst_3mf, mode="qidi"):
     if DEBUG: print(f"➡️ Fichier nettoyé : {dst_3mf}")
 
     return keep_object_id, keep_model
+
+
+
+
+def clean_qidislicer_structure(src_3mf, dst_3mf):
+    """
+    Nettoie un 3MF QidiSlicer moderne (Cura-like).
+    - Garde uniquement le premier <object> et son <item> dans 3D/3dmodel.model
+    - Supprime les autres objets et items
+    - Nettoie Metadata/Slic3r_PE_model.config pour ne garder que l'objet conservé
+    - Garantit la présence du fichier 3D/_rels/3dmodel.model.rels
+    """
+
+    model_path = "3D/3dmodel.model"
+    rels_path = "3D/_rels/3dmodel.model.rels"
+    config_path = "Metadata/Slic3r_PE_model.config"
+    
+    
+    if not os.path.exists(src_3mf):
+        print(' dans clean_qidislicer_structure fichier src_3mf inexistant',src_3mf)
+
+    with zipfile.ZipFile(src_3mf, "r") as zin:
+        # --- Nettoyage du 3dmodel.model ---
+        model_xml = zin.read(model_path).decode("utf-8")
+        root = ET.fromstring(model_xml)
+        ns = {"m": "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"}
+
+        objects = root.findall("m:resources/m:object", ns)
+        items = root.findall("m:build/m:item", ns)
+
+        keep_object_id = None
+        removed_ids = []
+
+        if objects:
+            keep_object_id = objects[0].attrib.get("id")
+
+        # Supprimer les objets excédentaires
+        for obj in objects[1:]:
+            removed_ids.append(obj.attrib.get("id"))
+            root.find("m:resources", ns).remove(obj)
+
+        # Supprimer les items excédentaires
+        for item in items:
+            if item.attrib.get("objectid") != keep_object_id:
+                removed_ids.append(item.attrib.get("objectid"))
+                root.find("m:build", ns).remove(item)
+
+        new_model_xml = ET.tostring(root, encoding="utf-8")
+
+        # --- Nettoyage du Slic3r_PE_model.config ---
+        if config_path in zin.namelist():
+            cfg_xml = zin.read(config_path).decode("utf-8")
+            cfg_root = ET.fromstring(cfg_xml)
+
+            for obj in cfg_root.findall("object"):
+                if obj.attrib.get("id") != keep_object_id:
+                    removed_ids.append(obj.attrib.get("id"))
+                    cfg_root.remove(obj)
+
+            new_cfg_xml = ET.tostring(cfg_root, encoding="utf-8")
+        else:
+            new_cfg_xml = None
+
+        # --- Réécriture du ZIP nettoyé ---
+        
+        if not os.path.exists(src_3mf):
+            print(' dans clean_qidislicer_structure fichier src_3mf inexistant',src_3mf)        
+        
+        
+        with zipfile.ZipFile(dst_3mf, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                name = item.filename
+                if name == model_path:
+                    zout.writestr(name, new_model_xml)
+                    continue
+                if name == config_path and new_cfg_xml:
+                    zout.writestr(name, new_cfg_xml)
+                    continue
+                zout.writestr(name, zin.read(name))
+
+            # Garantir la présence du rels
+            if rels_path not in zin.namelist():
+                rels_content = """<?xml version='1.0' encoding='UTF-8'?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+ <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel" />
+</Relationships>
+"""
+                zout.writestr(rels_path, rels_content)
+
+    if DEBUG: print(f"✅ Nettoyage QidiSlicer terminé. Objet conservé id={keep_object_id}")
+    if removed_ids:
+        if DEBUG: print(f"   Objets supprimés : {removed_ids}")
+    else:
+        if DEBUG: print("   Aucun objet supprimé (mono-objet déjà).")
+    if DEBUG: print(f"   Fichier nettoyé : {dst_3mf}")
+
+
 
 
 def clean_prusa_style(src_3mf, dst_3mf):
@@ -1824,19 +1815,10 @@ def patch_drop_to_buildplate_in_place(path):
 
 
 
-# Réinitialise la transformation des items en les centrant sur un point donné
-##############################################################################""" A SUPPRIMER NON UTILISEE
-def reset_item_transform(model_data, center=(PLATEAU_X, PLATEAU_Y, PLATEAU_Z)):
-    if DEBUG: print('1593 début reset_item_transform')
-    text = model_data.decode("utf-8")
-    new_transform = f'transform="1 0 0 0 1 0 0 0 1 {center[0]} {center[1]} {center[2]}"'
-    text = re.sub(r'(<item[^>]*?)\s+transform="[^"]+"', r'\1 ' + new_transform, text)
-    return text.encode("utf-8")
-
 
 
 # Recentre les sommets en XY et calcule le decal_z pour placement correct
-def recenter_vertices(model_data, slicer_target, slicer_source, fc_3mf_existed_at_start, center_x = 0, center_y = 0):
+def recenter_vertices(model_data, center_x = 0, center_y = 0):
     """
     Recentrage des vertex en X/Y et calcul du Zmax pour placement correct sur le plateau.
     Retourne : (données XML modifiées, zmax)
@@ -1907,9 +1889,6 @@ def recentrer_3mf_fichier(file_path, slicer_target, slicer_source, fc_3mf_existe
     # Appel de ta fonction existante
     new_model_data, decal_z = recenter_vertices(
         buffer["3D/3dmodel.model"],
-        slicer_target,
-        slicer_source,
-        fc_3mf_existed_at_start,
         center_x, center_y
     )
 
@@ -1932,6 +1911,7 @@ def apply_common_transform_to_3dmodel(model_xml_bytes, geom_data_centered, ignor
     - correction du Z réel
     - uniquement dans 3D/3dmodel.model
     """
+    print('<<Début apply_common_transform_to_3dmodel (annulation rotation et centrage)>>')
     try:
         root = ET.fromstring(model_xml_bytes)
 
@@ -1965,7 +1945,43 @@ def apply_common_transform_to_3dmodel(model_xml_bytes, geom_data_centered, ignor
         return model_xml_bytes
 
 
-def inject_geometry_into_qidi_3mf(old_3mf_path, new_3mf_path, new_model_xml_bytes,
+
+
+
+def apply_common_transform_to_3mf_in_place(fc_3mf):
+
+    if DEBUG: print("<<début apply_common_transform_to_3mf_in_place = préparation appel de apply_common_transform_to_3dmodel>>")
+    # Lire tout le 3MF
+    with zipfile.ZipFile(fc_3mf, 'r') as zin:
+        buffer = {name: zin.read(name) for name in zin.namelist()}
+
+    # Vérifier la présence du 3dmodel.model
+    if "3D/3dmodel.model" not in buffer:
+        print("⚠️ Pas de 3D/3dmodel.model dans le 3MF")
+        return False
+
+    # Appliquer le transform commun
+    new_xml = apply_common_transform_to_3dmodel(
+        buffer["3D/3dmodel.model"],
+        buffer["3D/3dmodel.model"],
+        True
+    )
+    buffer["3D/3dmodel.model"] = new_xml
+
+    # Réécriture du 3MF
+    with zipfile.ZipFile(fc_3mf, 'w', zipfile.ZIP_DEFLATED) as zout:
+        for name, data in buffer.items():
+            zout.writestr(name, data)
+
+    return True
+
+
+
+
+
+
+
+def inject_geometry_into_qidislicer_3mf (old_3mf_path, new_3mf_path, new_model_xml_bytes,
                                    decal_z, ignore_transform):
     """
     Construit un nouveau 3MF Qidi en remplaçant le <mesh> dans 3D/3dmodel.model
@@ -1973,10 +1989,10 @@ def inject_geometry_into_qidi_3mf(old_3mf_path, new_3mf_path, new_model_xml_byte
     """
 
     if DEBUG:
-        print('Début inject_geometry_into_qidi_3mf')
+        print('Début inject_geometry_into_qidislicer_3mf ')
 
     if not os.path.exists(old_3mf_path):
-        print('inject_geometry_into_qidi_3mf : fichier inexistant', old_3mf_path)
+        print('inject_geometry_into_qidislicer_3mf : fichier inexistant', old_3mf_path)
 
     # --- NOUVEAU : stockage du Metadata corrigé ---
     corrected_metadata = None
@@ -1995,12 +2011,6 @@ def inject_geometry_into_qidi_3mf(old_3mf_path, new_3mf_path, new_model_xml_byte
             if name == "3D/3dmodel.model":
                 merged = replace_mesh_in_model_xml(data, new_model_xml_bytes)
                 try:
-                    # --- NOUVEAU : traitement commun transform ---
-                    merged = apply_common_transform_to_3dmodel(
-                        merged,
-                        new_model_xml_bytes,
-                        ignore_transform
-                    )
 
                     # On recharge root pour la suite (Metadata)
                     root = ET.fromstring(merged)
@@ -2132,11 +2142,11 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
 
     if slicer_source == "qidistudio":
         keep_object_id, keep_model = clean_multi_object_style(
-            old_3mf_backup, cleaned_old_3mf, mode="qidi"
+            old_3mf_backup, cleaned_old_3mf
         )
 
     elif slicer_source == "qidislicer":
-        clean_qidi_style(old_3mf_backup, cleaned_old_3mf)
+        clean_qidislicer_structure(old_3mf_backup, cleaned_old_3mf)
         keep_model = None
 
     elif slicer_source == "slic3r":
@@ -2179,7 +2189,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
 
     if slicer_target != "qidistudio":
         geom_data_centered, decal_z = recenter_vertices(
-            geom_data, slicer_target, slicer_source, fc_3mf_existed_at_start
+            geom_data
         )
     else:
         geom_data_centered = geom_data
@@ -2197,7 +2207,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
     # CAS QIDISLICER (mono-objet)
     # ------------------------------------------------------------
     if slicer_source == "qidislicer":
-        inject_geometry_into_qidi_3mf(
+        inject_geometry_into_qidislicer_3mf (
             old_3mf,
             tmp_new,
             geom_data_centered,
@@ -2318,7 +2328,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
 
 
 
-def apply_transform_centering(fc_3mf):
+def recenter_vertices_in_place(fc_3mf):
     """
     Recentre réellement le mesh :
     - lit le .model
@@ -2330,7 +2340,7 @@ def apply_transform_centering(fc_3mf):
     import xml.etree.ElementTree as ET
     import shutil
     import os
-    print("DEBUG: apply_transform_centering CALLED")
+    print("DEBUG: recenter_vertices_in_place CALLED")
 
     # 1) Trouver le fichier .model
     with zipfile.ZipFile(fc_3mf, 'r') as zin:
@@ -2349,9 +2359,6 @@ def apply_transform_centering(fc_3mf):
     # 2) Recentre les vertex (TA fonction)
     new_model_data, decal_z = recenter_vertices(
         model_data,
-        slicer_target="qidistudio",
-        slicer_source="qidistudio",
-        fc_3mf_existed_at_start=True,
         center_x=0,
         center_y=0
     )
@@ -2383,7 +2390,7 @@ def clean_final_qidistudioFamily(fc_3mf, base_name):
     tmp_cleaned = base_name + ".finalclean.3mf"
 
     # 1) Nettoyage structurel
-    clean_multi_object_style(fc_3mf, tmp_cleaned, mode="qidi")
+    clean_multi_object_style(fc_3mf, tmp_cleaned)
 
     # 2) Remplacement du fichier final
     if os.path.exists(fc_3mf):
@@ -2540,7 +2547,8 @@ def export_replace_geometry():
     # ------------------------------------------------------------
     # 5) Injection géométrie si ancien 3MF
     # ------------------------------------------------------------
-      
+    print("Dans export_replace_geometry : >>> Avant inject_geometry, fichier =", fc_3mf)
+   
     if inject_geometry_if_possible(
         base_name, fc_3mf, old_3mf_backup, fc_3mf_existed_at_start,
         slicer_path, ignore_transform
@@ -2555,7 +2563,7 @@ def export_replace_geometry():
     if slicer_target == "qidistudio":
 
         if ignore_transform: 
-            apply_transform_centering(fc_3mf)
+            recenter_vertices_in_place(fc_3mf)
         if slicer_source == "qidistudio" and fc_3mf_existed_at_start:
             clean_final_qidistudioFamily(fc_3mf, base_name)
         
@@ -2565,24 +2573,52 @@ def export_replace_geometry():
 
 
 
+    # --- APPEL FINAL DE NEUTRALISATION POUR QIDISLICER (ou autre cible si étendue) ---
+    # On applique la neutralisation/centrage transform uniquement ici, une seule fois.
+    if ignore_transform and slicer_target == "qidislicer":
+        apply_common_transform_to_3mf_in_place(fc_3mf)
 
 
 
 
-    
+
+
+
+
+
+
     if slicer_target in ['cura'] and slicer_source not in ['cura']:
         if DEBUG: print('recentrage demandé car cura en cible mais pas en source')
         recentrer_3mf_fichier(fc_3mf, slicer_target, slicer_source, fc_3mf_existed_at_start,
             PLATEAU_X/2, PLATEAU_Y/2)
-            
+        
+##############################" ajout
+
+
+    if slicer_target == 'cura' and ignore_transform:
+        if DEBUG:
+            print("Recentrage transform pour Cura via apply_common_transform_to_3mf_in_place")
+        apply_common_transform_to_3mf_in_place(fc_3mf)
+
+
+
+
+##############################"fin ajout
+
+
+
+
+
+
+
+  
     if slicer_target in ['cura']:
         #Ajout d'une directive pour que cura plaque l'ojjet sur le plateau.
         #Et du coup on doit pouvoir retirer le cacul du décalage en z
         patch_drop_to_buildplate_in_place(fc_3mf)
+ 
         
-        
-        
-        
+
         
         
         
