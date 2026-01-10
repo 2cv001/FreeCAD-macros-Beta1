@@ -2557,18 +2557,12 @@ def export_replace_geometry():
        
 
 
-
-
-    # --- QidiStudioFamily ---
     if slicer_target == "qidistudio":
+        # QidiStudio : recentrage des vertices TOUJOURS (comme dans l’ancienne version)
+        recenter_vertices_in_place(fc_3mf)
 
-        if ignore_transform: 
-            recenter_vertices_in_place(fc_3mf)
         if slicer_source == "qidistudio" and fc_3mf_existed_at_start:
             clean_final_qidistudioFamily(fc_3mf, base_name)
-        
-
-
 
 
 
