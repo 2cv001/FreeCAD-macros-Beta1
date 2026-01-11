@@ -58,6 +58,8 @@ import gc
 # -------------------------
 INI_FILE = os.path.join(os.path.dirname(__file__), "3mfToPrint.ini")
 PLATEAU_X, PLATEAU_Y, PLATEAU_Z = 240, 240, 0
+MAX_OLD_BACKUPS = 3
+
 DEBUG=True
 
 if platform.system() == "Windows":
@@ -2200,6 +2202,13 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
         # Tous les autres slicers gardent l'ancien recentrage
         geom_data_centered, decal_z = recenter_vertices(geom_data)
 
+
+
+
+
+
+
+
     # ------------------------------------------------------------
     # 6 bis) Recentrage final pour QidiSlicer (préparation migration)
     # ------------------------------------------------------------
@@ -2639,14 +2648,6 @@ def export_replace_geometry():
 
 
 
-
-
-
-
-
-
-
-
     # --- APPEL FINAL DE NEUTRALISATION POUR QIDISLICER (ou autre cible si étendue) ---
     # On applique la neutralisation/centrage transform uniquement ici, une seule fois.
     if ignore_transform and slicer_target == "qidislicer":
@@ -2660,12 +2661,26 @@ def export_replace_geometry():
 
 
 
-
+    """
     if slicer_target in ['cura'] and slicer_source not in ['cura']:
         if DEBUG: print('recentrage demandé car cura en cible mais pas en source')
         recentrer_3mf_fichier(fc_3mf, slicer_target, slicer_source, fc_3mf_existed_at_start,
             PLATEAU_X/2, PLATEAU_Y/2)
-        
+    """  
+
+
+
+    if slicer_target == 'cura' and slicer_source != 'cura':
+        if DEBUG:
+            print("Premier lancement Cura → recentrage transform automatique")
+        apply_common_transform_to_3mf_in_place(fc_3mf)
+
+
+
+
+
+
+    
 ##############################" ajout
 
 
