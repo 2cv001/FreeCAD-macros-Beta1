@@ -428,6 +428,8 @@ def ask_user_options(current_slicer, current_linear, current_angular):
     # Ligne combinée : case "Lancer le slicer" + champ chemin
     h_slicer = QtGui.QHBoxLayout()
     chk_launch = QtGui.QCheckBox(tr("launch_slicer"))
+    chk_launch.setFixedWidth(250)   # largeur colonne gauche
+
     chk_launch.setToolTip(tr("hint_launch_slicer"))
     chk_launch.setChecked(True)
     h_slicer.addWidget(chk_launch)
@@ -444,6 +446,64 @@ def ask_user_options(current_slicer, current_linear, current_angular):
     btn_browse.clicked.connect(browse)
     h_slicer.addWidget(btn_browse)
     layout.addLayout(h_slicer)
+
+
+
+
+    # ------------------------------------------------------------
+    # Calcul du fichier 3MF par défaut
+    # ------------------------------------------------------------
+    doc = FreeCAD.ActiveDocument
+    if doc and doc.FileName:
+        fcstd_path = doc.FileName
+        default_fc_3mf = os.path.splitext(fcstd_path)[0] + ".3mf"
+    else:
+        default_fc_3mf = "select file .3mf"
+
+
+    # ------------------------------------------------------------
+    # Ligne "Fichier 3MF de base" alignée EXACTEMENT comme la ligne EXE
+    # ------------------------------------------------------------
+    h_base3mf = QtGui.QHBoxLayout()
+
+    # Label à gauche : même largeur que chk_launch
+    lbl_base3mf = QtGui.QLabel("Fichier 3MF pour paramètres impr. :")
+    lbl_base3mf.setFixedWidth(chk_launch.width())
+
+
+    h_base3mf.addWidget(lbl_base3mf)
+
+    # Champ + bouton (inchangé)
+    edit_base3mf = QtGui.QLineEdit(default_fc_3mf)
+    edit_base3mf.setMinimumWidth(420)
+    h_base3mf.addWidget(edit_base3mf, stretch=1)
+
+    btn_base3mf = QtGui.QPushButton("…")
+
+    def browse_base3mf():
+       
+       # Dossier du fichier FreeCAD
+        fcstd_dir = os.path.dirname(FreeCAD.ActiveDocument.FileName) if FreeCAD.ActiveDocument and FreeCAD.ActiveDocument.FileName else ""
+
+        path, _ = QtGui.QFileDialog.getOpenFileName(
+            dialog,
+            "Fichier 3MF pour paramètres impr.",
+            fcstd_dir,   # ← ouverture dans le dossier du .FCStd
+            "Fichiers 3MF (*.3mf)"
+        )
+
+    
+       
+        if path:
+            edit_base3mf.setText(path)
+
+    btn_base3mf.clicked.connect(browse_base3mf)
+    h_base3mf.addWidget(btn_base3mf)
+
+    layout.addLayout(h_base3mf)
+
+
+
 
     # Précision linéaire
     h_lin = QtGui.QHBoxLayout()
@@ -519,6 +579,7 @@ def ask_user_options(current_slicer, current_linear, current_angular):
         return (
             chk_stl.isChecked(),
             edit_slicer.text(),
+            edit_base3mf.text(),
             chk_launch.isChecked(),
             linear_val,
             angular_rad,
@@ -529,7 +590,97 @@ def ask_user_options(current_slicer, current_linear, current_angular):
 
 
     else:
-        return (None, None, None, None, None, None, None, [])
+        return (None, None, None, None, None, None, None, None, [])
+
+
+
+
+
+
+
+def get_user_options(cfg):
+    """
+    Affiche la boîte de dialogue utilisateur :
+    - paramètres FreeCAD
+    - positions
+    - STL
+    - slicer
+    - commandes externes
+
+    Gère :
+    - annulation
+    - validation du chemin du slicer
+    - sauvegarde des préférences
+
+
+    """
+
+    # Préférences actuelles
+    slicer_path_pref = cfg.get("slicer_exe", DEFAULT_SLICER_EXE)
+    linear_pref = cfg.get("linear_deflection", DEFAULT_LINEAR_DEFLECTION)
+    angular_pref = cfg.get("angular_deflection", DEFAULT_ANGULAR_DEFLECTION)
+
+    while True:
+        # Appel de la boîte de dialogue utilisateur
+        (generate_stl,
+         slicer_path, base3mf_path, launch_slicer,
+         linear_value, angular_value, reset_all, 
+         ignore_transform, extra_cmds) = ask_user_options(
+            slicer_path_pref, linear_pref, angular_pref
+        )
+
+
+
+        # Annulation
+        if slicer_path is None and launch_slicer is None:
+            show_message(tr("info_title"), tr("info_cancel"))
+            return None
+
+        # Validation du chemin du slicer
+        if launch_slicer and slicer_path and not os.path.exists(slicer_path):
+            show_message(tr("error_title"), f"{tr('error_invalid_slicer')}\n{slicer_path}")
+            continue
+
+        # Options valides → on sort de la boucle
+        break
+
+    # Sauvegarde des préférences
+    save_settings(
+        linear=linear_value,
+        angular_rad=angular_value,
+        slicer_path=slicer_path
+    )
+
+    return (
+        generate_stl,
+        slicer_path,
+        base3mf_path,
+        launch_slicer,
+        linear_value,
+        angular_value,
+        reset_all,
+        ignore_transform,
+        extra_cmds
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # -------------------------
 # Rotation des sauvegardes
@@ -1582,70 +1733,6 @@ def get_valid_selection(fc_3mf, old_3mf_backup, fc_3mf_existed_at_start):
     return selection
 
 
-def get_user_options(cfg):
-    """
-    Affiche la boîte de dialogue utilisateur :
-    - paramètres FreeCAD
-    - positions
-    - STL
-    - slicer
-    - commandes externes
-
-    Gère :
-    - annulation
-    - validation du chemin du slicer
-    - sauvegarde des préférences
-
-
-    """
-
-    # Préférences actuelles
-    slicer_path_pref = cfg.get("slicer_exe", DEFAULT_SLICER_EXE)
-    linear_pref = cfg.get("linear_deflection", DEFAULT_LINEAR_DEFLECTION)
-    angular_pref = cfg.get("angular_deflection", DEFAULT_ANGULAR_DEFLECTION)
-
-    while True:
-        # Appel de la boîte de dialogue utilisateur
-        (generate_stl,
-         slicer_path, launch_slicer,
-         linear_value, angular_value, reset_all, 
-         ignore_transform, extra_cmds) = ask_user_options(
-            slicer_path_pref, linear_pref, angular_pref
-        )
-
-
-
-        # Annulation
-        if slicer_path is None and launch_slicer is None:
-            show_message(tr("info_title"), tr("info_cancel"))
-            return None
-
-        # Validation du chemin du slicer
-        if launch_slicer and slicer_path and not os.path.exists(slicer_path):
-            show_message(tr("error_title"), f"{tr('error_invalid_slicer')}\n{slicer_path}")
-            continue
-
-        # Options valides → on sort de la boucle
-        break
-
-    # Sauvegarde des préférences
-    save_settings(
-        linear=linear_value,
-        angular_rad=angular_value,
-        slicer_path=slicer_path
-    )
-
-    return (
-        generate_stl,
-        slicer_path,
-        launch_slicer,
-        linear_value,
-        angular_value,
-        reset_all,
-        ignore_transform,
-        extra_cmds
-    )
-
 
 
 def export_freecad_files(selection, base_name, fc_3mf, generate_stl,
@@ -2600,12 +2687,12 @@ def export_replace_geometry():
     opts = get_user_options(cfg)
     
     if opts is None:
-
         return
 
     (generate_stl,
-     slicer_path, launch_slicer,
+     slicer_path, base3mf_path, launch_slicer,
      linear_value, angular_value, reset_all, ignore_transform, extra_cmds) = opts
+
      
      
     # Si l'utilisateur veut repartir de zéro
@@ -2623,6 +2710,36 @@ def export_replace_geometry():
         macro_path = __file__
         exec(open(macro_path, "r", encoding="utf-8").read())
         return
+
+
+
+
+
+
+        # ------------------------------------------------------------
+        # Remplacer le 3MF de travail par celui choisi par l'utilisateur
+        # (seulement si le fichier existe)
+        # ------------------------------------------------------------
+        if base3mf_path and os.path.exists(base3mf_path):
+            try:
+                shutil.copy(base3mf_path, fc_3mf)
+                if DEBUG:
+                    print("Copie du fichier 3MF de base :", os.path.basename(base3mf_path),
+                          "vers", os.path.basename(fc_3mf))
+            except Exception as e:
+                # Pas de message : on reste silencieux
+                if DEBUG:
+                    print("Erreur lors de la copie du 3MF de base :", e)
+                return
+        else:
+            if DEBUG:
+                print("Aucun fichier 3MF de base à copier :", base3mf_path)
+
+
+
+
+
+
 
    
     #------------------------------------------------------------
@@ -2645,26 +2762,6 @@ def export_replace_geometry():
     #rotation des sauvegardes du 3mf
     #-------------------------------------------------------------- 
     rotate_old_backups(base_name, max_backups=3)   
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
