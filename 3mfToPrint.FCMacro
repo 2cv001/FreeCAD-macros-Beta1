@@ -58,7 +58,7 @@ import gc
 # -------------------------
 INI_FILE = os.path.join(os.path.dirname(__file__), "3mfToPrint.ini")
 PLATEAU_X, PLATEAU_Y, PLATEAU_Z = 240, 240, 0
-MAX_OLD_BACKUPS = 3
+MAX_OLD_BACKUPS = 5
 
 DEBUG=True
 
@@ -531,11 +531,51 @@ def ask_user_options(current_slicer, current_linear, current_angular):
     else:
         return (None, None, None, None, None, None, None, [])
 
+# -------------------------
+# Rotation des sauvegardes
+# -------------------------
+def rotate_old_backups(base_name, max_backups):
+    """
+    Sauvegarde le fichier base_name.3mf sous la forme :
+        base_name.old.YYYY-MM-DD-HH-MM-SS.3mf
+
+    Et conserve uniquement les max_backups fichiers les plus récents.
+    """
+    fc_3mf = base_name + ".3mf"
+    if not os.path.exists(fc_3mf):
+        return
+
+    # 1) Créer un backup daté
+    timestamp = time.strftime("%Y-%m-%d-%H-%M-%S")
+    backup_path = f"{base_name}.old.{timestamp}.3mf"
+    shutil.copy(fc_3mf, backup_path)
+
+    if DEBUG:
+        print("Backup daté créé :", os.path.basename(backup_path))
+
+    # 2) Lister tous les backups datés
+    dir_name = os.path.dirname(base_name) or "."
+    prefix = os.path.basename(base_name) + ".old."
+    suffix = ".3mf"
+
+    backups = []
+    for fname in os.listdir(dir_name):
+        if fname.startswith(prefix) and fname.endswith(suffix):
+            full = os.path.join(dir_name, fname)
+            backups.append(full)
+
+    # 3) Trier par date de modification (du plus récent au plus ancien)
+    backups.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+
+    # 4) Supprimer les plus anciens au-delà de max_backups
+    for old in backups[max_backups:]:
+        if DEBUG:
+            print("Suppression ancien backup :", os.path.basename(old))
+        os.remove(old)
 
 # -------------------------
 # Fonctions de traitement 3MF / mesh
 # -------------------------
-
 def detect_slicer_target_from_path(path):
     if not path:
         return None
@@ -1724,6 +1764,12 @@ def handle_empty_plate(fc_3mf_existed_at_start, old_3mf_backup, fc_3mf):
     elif clicked == reset_btn:
         if os.path.exists(fc_3mf):
             os.remove(fc_3mf)
+            old_3mf = base_name + ".old.3mf"
+        if os.path.exists(old_3mf):
+            os.remove(old_3mf)
+            if DEBUG: print("Suppression de", os.path.basename(old_3mf))    
+            
+            
         print("🗑️ New projet : 3MF FreeCAD deleted. Macro run again.")
         export_replace_geometry()
         return False  # On arrête ce cycle
@@ -2594,6 +2640,34 @@ def export_replace_geometry():
     if not handle_empty_plate(fc_3mf_existed_at_start, old_3mf_backup, fc_3mf):
         return
 
+    
+    #------------------------------------------------------------
+    #rotation des sauvegardes du 3mf
+    #-------------------------------------------------------------- 
+    rotate_old_backups(base_name, max_backups=3)   
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     #------------------------------------------------------------
     # préparation de l'environnement suite après boite de dialogue
     #--------------------------------------------------------------
@@ -2629,7 +2703,6 @@ def export_replace_geometry():
     # ------------------------------------------------------------
 
     if slicer_target == "qidistudio":
-        #recenter_vertices_in_place(fc_3mf)
         recenter_model_in_3d_objects(fc_3mf)
         if slicer_source == "qidistudio" and fc_3mf_existed_at_start:
             clean_final_qidistudioFamily(fc_3mf, base_name)
@@ -2637,37 +2710,14 @@ def export_replace_geometry():
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-    # --- APPEL FINAL DE NEUTRALISATION POUR QIDISLICER (ou autre cible si étendue) ---
-    # On applique la neutralisation/centrage transform uniquement ici, une seule fois.
+    # --- QIDISLICER ---
     if ignore_transform and slicer_target == "qidislicer":
         apply_common_transform_to_3mf_in_place(fc_3mf)
 
-
-
-
-
-
-
-
-
-    """
-    if slicer_target in ['cura'] and slicer_source not in ['cura']:
-        if DEBUG: print('recentrage demandé car cura en cible mais pas en source')
-        recentrer_3mf_fichier(fc_3mf, slicer_target, slicer_source, fc_3mf_existed_at_start,
-            PLATEAU_X/2, PLATEAU_Y/2)
-    """  
-
+    #--- PRUSA ---
+    if slicer_target == 'slic3r' and ignore_transform:        
+        recenter_model_in_3d_3dmodel(fc_3mf, 0,0)
+        apply_common_transform_to_3mf_in_place(fc_3mf)
 
 
     if slicer_target == 'cura' and slicer_source != 'cura':
@@ -2676,41 +2726,19 @@ def export_replace_geometry():
         apply_common_transform_to_3mf_in_place(fc_3mf)
 
 
-
-
-
-
-    
-##############################" ajout
-
-
     if slicer_target == 'cura' and ignore_transform:
         if DEBUG:
             print("Recentrage transform pour Cura via apply_common_transform_to_3mf_in_place")
         apply_common_transform_to_3mf_in_place(fc_3mf)
 
 
-
-
-##############################"fin ajout
-
-
-
-
-
-
-
-  
     if slicer_target in ['cura']:
         #Ajout d'une directive pour que cura plaque l'ojjet sur le plateau.
         #Et du coup on doit pouvoir retirer le cacul du décalage en z
         patch_drop_to_buildplate_in_place(fc_3mf)
  
         
-
-        
-        
-        
+     
         
     # ------------------------------------------------------------
     # 6) Lancement du slicer
