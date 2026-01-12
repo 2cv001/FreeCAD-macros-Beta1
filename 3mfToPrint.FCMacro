@@ -122,6 +122,14 @@ TRANSLATIONS = {
         "angular_label": "Tolérance angulaire (AngularDeflection) en degrés (ex: 3)",
         "external_actions": "Actions externes à exécuter avant fermeture :",
         "ignore_transform": "Ne pas récupérer la position/rotation du slicer",
+        "base3mf_label": "Fichier 3MF pour paramètres impr. :",
+        "base3mf_dialog_title": "Choisir un fichier 3MF pour les paramètres d'impression",
+        "base3mf_filter": "Fichiers 3MF (*.3mf)",
+        "select_3mf_placeholder": "Sélectionner un fichier .3mf",
+        "hint_base3mf": "Facultatif : permet d’utiliser les paramètres d’imprimante d’un autre fichier 3MF."
+            "\nPar défaut, le fichier 3MF du projet est utilisé.",
+
+
 
 
         # Messages d'erreur / avertissement
@@ -161,7 +169,6 @@ TRANSLATIONS = {
 
 
         # Infos
-        "info_cancel": "⚠️ Export annulé par l’utilisateur.",
         "info_done": "✅ Export terminé. Le slicer n'a pas été lancé (option décochée).",
         "info_export_fc": "✅ Fichier généré uniquement par FreeCAD :",
         "info_export_slicer": "✅ Export avec récupération des paramètres du slicer :",
@@ -212,6 +219,13 @@ TRANSLATIONS = {
         "angular_label": "Angular tolerance (AngularDeflection) in degrees (e.g. 3)",
         "external_actions": "External actions to execute before closing:",
         "ignore_transform": "Do not recover slicer position/rotation",
+        "base3mf_label": "3MF file for print parameters:",
+        "base3mf_dialog_title": "Select a 3MF file for print parameters",
+        "base3mf_filter": "3MF files (*.3mf)",
+        "select_3mf_placeholder": "Select a .3mf file",
+        "hint_base3mf": "Optional: allows using printer parameters from another 3MF file." 
+            "\nBy default, the project’s 3MF file is used.",
+
 
 
         # Error / warning messages
@@ -249,7 +263,6 @@ TRANSLATIONS = {
 
 
         # Infos
-        "info_cancel": "⚠️ Export cancelled by user.",
         "info_done": "✅ Export finished. Slicer was not launched (option unchecked).",
         "info_export_fc": "✅ File generated only by FreeCAD:",
         "info_export_slicer": "✅ Export with slicer settings recovered:",
@@ -460,40 +473,35 @@ def ask_user_options(current_slicer, current_linear, current_angular):
     else:
         default_fc_3mf = "select file .3mf"
 
-
     # ------------------------------------------------------------
     # Ligne "Fichier 3MF de base" alignée EXACTEMENT comme la ligne EXE
     # ------------------------------------------------------------
     h_base3mf = QtGui.QHBoxLayout()
 
-    # Label à gauche : même largeur que chk_launch
-    lbl_base3mf = QtGui.QLabel("Fichier 3MF pour paramètres impr. :")
+    lbl_base3mf = QtGui.QLabel(tr("base3mf_label"))
     lbl_base3mf.setFixedWidth(chk_launch.width())
-
+    lbl_base3mf.setToolTip(tr("hint_base3mf"))
 
     h_base3mf.addWidget(lbl_base3mf)
 
-    # Champ + bouton (inchangé)
     edit_base3mf = QtGui.QLineEdit(default_fc_3mf)
+    edit_base3mf.setToolTip(tr("hint_base3mf"))
+
     edit_base3mf.setMinimumWidth(420)
     h_base3mf.addWidget(edit_base3mf, stretch=1)
-
-    btn_base3mf = QtGui.QPushButton("…")
+    btn_base3mf = QtGui.QPushButton(tr("browse"))
 
     def browse_base3mf():
-       
-       # Dossier du fichier FreeCAD
-        fcstd_dir = os.path.dirname(FreeCAD.ActiveDocument.FileName) if FreeCAD.ActiveDocument and FreeCAD.ActiveDocument.FileName else ""
+        fcstd_dir = os.path.dirname(FreeCAD.ActiveDocument.FileName) \
+            if FreeCAD.ActiveDocument and FreeCAD.ActiveDocument.FileName else ""
 
         path, _ = QtGui.QFileDialog.getOpenFileName(
             dialog,
-            "Fichier 3MF pour paramètres impr.",
-            fcstd_dir,   # ← ouverture dans le dossier du .FCStd
-            "Fichiers 3MF (*.3mf)"
+            tr("base3mf_dialog_title"),
+            fcstd_dir,
+            tr("base3mf_filter")
         )
 
-    
-       
         if path:
             edit_base3mf.setText(path)
 
@@ -501,6 +509,7 @@ def ask_user_options(current_slicer, current_linear, current_angular):
     h_base3mf.addWidget(btn_base3mf)
 
     layout.addLayout(h_base3mf)
+
 
 
 
@@ -594,10 +603,6 @@ def ask_user_options(current_slicer, current_linear, current_angular):
 
 
 
-
-
-
-
 def get_user_options(cfg):
     """
     Affiche la boîte de dialogue utilisateur :
@@ -633,7 +638,7 @@ def get_user_options(cfg):
 
         # Annulation
         if slicer_path is None and launch_slicer is None:
-            show_message(tr("info_title"), tr("info_cancel"))
+            #show_message(tr("info_title"), tr("info_cancel"))
             return None
 
         # Validation du chemin du slicer
@@ -662,22 +667,6 @@ def get_user_options(cfg):
         ignore_transform,
         extra_cmds
     )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -2480,10 +2469,6 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
 
 
 
-
-
-
-
 def recenter_vertices_in_place(fc_3mf):
     """
     Recentre réellement le mesh :
@@ -2716,27 +2701,25 @@ def export_replace_geometry():
 
 
 
-        # ------------------------------------------------------------
-        # Remplacer le 3MF de travail par celui choisi par l'utilisateur
-        # (seulement si le fichier existe)
-        # ------------------------------------------------------------
-        if base3mf_path and os.path.exists(base3mf_path):
-            try:
+    # ------------------------------------------------------------
+    # Remplacer le 3MF de travail par celui choisi par l'utilisateur
+    # (seulement si le fichier existe)
+    # ------------------------------------------------------------
+    if base3mf_path and os.path.exists(base3mf_path):
+        try:
+            # Ne rien faire si c'est le même fichier
+            if os.path.exists(fc_3mf) and os.path.samefile(base3mf_path, fc_3mf):
+                if DEBUG:
+                    print("Le fichier 3MF de base est identique au fichier de travail, aucune copie nécessaire.")
+            else:
                 shutil.copy(base3mf_path, fc_3mf)
                 if DEBUG:
                     print("Copie du fichier 3MF de base :", os.path.basename(base3mf_path),
                           "vers", os.path.basename(fc_3mf))
-            except Exception as e:
-                # Pas de message : on reste silencieux
-                if DEBUG:
-                    print("Erreur lors de la copie du 3MF de base :", e)
-                return
-        else:
+        except Exception as e:
             if DEBUG:
-                print("Aucun fichier 3MF de base à copier :", base3mf_path)
-
-
-
+                print("Erreur lors de la copie du 3MF de base :", e)
+      
 
 
 
@@ -2761,7 +2744,7 @@ def export_replace_geometry():
     #------------------------------------------------------------
     #rotation des sauvegardes du 3mf
     #-------------------------------------------------------------- 
-    rotate_old_backups(base_name, max_backups=3)   
+    rotate_old_backups(base_name, MAX_OLD_BACKUPS)   
 
 
 
@@ -2822,7 +2805,7 @@ def export_replace_geometry():
             print("Premier lancement Cura → recentrage transform automatique")
         apply_common_transform_to_3mf_in_place(fc_3mf)
 
-
+    #--- CURA ---
     if slicer_target == 'cura' and ignore_transform:
         if DEBUG:
             print("Recentrage transform pour Cura via apply_common_transform_to_3mf_in_place")
