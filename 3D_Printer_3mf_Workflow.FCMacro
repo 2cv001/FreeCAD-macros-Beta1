@@ -806,41 +806,7 @@ def build_model_xml(vertices, triangles):
     return xml.encode("utf-8")
 
 
-#################OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOLLLLLLLLLLLLLLLLLLLLLLLLDDDDDDDDDDDDDDDDDDDDDDD
-def extract_vertices_and_triangles_from_model_xml(xml_bytes):
-    """
-    Extrait vertices et triangles depuis un XML 3MF FreeCAD.
-    Retourne (vertices, triangles)
-    """
-    root = ET.fromstring(xml_bytes)
 
-    # Namespace ?
-    if "}" in root.tag:
-        ns_uri = root.tag.split("}")[0].strip("{")
-        ns = {"m": ns_uri}
-        vert_elems = root.findall(".//m:vertex", ns)
-        tri_elems  = root.findall(".//m:triangle", ns)
-    else:
-        vert_elems = root.findall(".//vertex")
-        tri_elems  = root.findall(".//triangle")
-
-    vertices = []
-    for v in vert_elems:
-        vertices.append((
-            float(v.get("x")),
-            float(v.get("y")),
-            float(v.get("z"))
-        ))
-
-    triangles = []
-    for t in tri_elems:
-        triangles.append((
-            int(t.get("v1")),
-            int(t.get("v2")),
-            int(t.get("v3"))
-        ))
-
-    return vertices, triangles
 
 def extract_vertices_and_triangles_from_model_xml(xml_bytes):
     """
@@ -1916,133 +1882,6 @@ def patch_drop_to_buildplate_in_place(path):
 ################OOOOOOOOOOOOOOLLLLLLLLLLLLLLLLLLLLLLLDDDDDDDDDDDDDDD
 def recenter_vertices(model_data):
     """
-    Recentre automatiquement les vertex :
-    - centre XY autour de (0,0)
-    - pose Zmin à 0
-    Retourne : (données XML modifiées, decal_z)
-    """
-    if DEBUG:
-        print(' Recenter_vertices : recentrage automatique XY + correction Zmin')
-
-    try:
-        ET.register_namespace('', "http://schemas.microsoft.com/3dmanufacturing/core/2015/02")
-        root = ET.fromstring(model_data.decode("utf-8"))
-        ns = {"ns": "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"}
-        verts = root.findall(".//ns:vertex", ns)
-
-        if not verts:
-            show_message(tr("warn_title"), tr("warn_no_geom_vertices"))
-            return model_data, 0.0
-
-        # --- 1) Calcul des bornes ---
-        xs = []
-        ys = []
-        zs = []
-
-        for v in verts:
-            xs.append(float(v.attrib["x"]))
-            ys.append(float(v.attrib["y"]))
-            zs.append(float(v.attrib["z"]))
-
-        xmin, xmax = min(xs), max(xs)
-        ymin, ymax = min(ys), max(ys)
-        zmin = min(zs)
-
-        # Centre XY
-        cx = (xmin + xmax) / 2.0
-        cy = (ymin + ymax) / 2.0
-
-        # Décalage Z
-        decal_z = -zmin
-
-        if DEBUG:
-            print(f"  xmin={xmin}, xmax={xmax}, cx={cx}")
-            print(f"  ymin={ymin}, ymax={ymax}, cy={cy}")
-            print(f"  zmin={zmin}, decal_z={decal_z}")
-
-        # --- 2) Recentrage effectif ---
-        for v in verts:
-            x = float(v.attrib["x"]) - cx
-            y = float(v.attrib["y"]) - cy
-            z = float(v.attrib["z"]) + decal_z
-
-            v.attrib["x"] = f"{x:.6f}"
-            v.attrib["y"] = f"{y:.6f}"
-            v.attrib["z"] = f"{z:.6f}"
-
-        return ET.tostring(root, encoding="utf-8", xml_declaration=False), decal_z
-
-    except Exception as e:
-        if DEBUG:
-            print("⚠️ Erreur dans recenter_vertices :", e)
-        return model_data, 0.0
-
-#NEW
-def recenter_vertices(model_data):
-    """
-    Recentrage XY + correction Zmin en mode TEXTE BRUT.
-    - Aucun parseur XML
-    - Aucun namespace ajouté
-    - Compatible avec tous les slicers
-    """
-
-    if DEBUG:
-        print(" Recenter_vertices : recentrage automatique XY + correction Zmin (mode texte brut)")
-
-    try:
-        text = model_data.decode("utf-8")
-
-        # --- 1) Extraction des vertices ---
-        verts = re.findall(
-            r'<vertex[^>]*x="([^"]+)"[^>]*y="([^"]+)"[^>]*z="([^"]+)"',
-            text
-        )
-
-        if not verts:
-            if DEBUG:
-                print("⚠️ Aucun vertex trouvé dans recenter_vertices()")
-            return model_data, 0.0
-
-        xs = [float(v[0]) for v in verts]
-        ys = [float(v[1]) for v in verts]
-        zs = [float(v[2]) for v in verts]
-
-        xmin, xmax = min(xs), max(xs)
-        ymin, ymax = min(ys), max(ys)
-        zmin = min(zs)
-
-        cx = (xmin + xmax) / 2.0
-        cy = (ymin + ymax) / 2.0
-        decal_z = -zmin
-
-        if DEBUG:
-            print(f"  xmin={xmin}, xmax={xmax}, cx={cx}")
-            print(f"  ymin={ymin}, ymax={ymax}, cy={cy}")
-            print(f"  zmin={zmin}, decal_z={decal_z}")
-
-        # --- 2) Fonction de remplacement ---
-        def repl(m):
-            x = float(m.group(1)) - cx
-            y = float(m.group(2)) - cy
-            z = float(m.group(3)) + decal_z
-            return f'<vertex x="{x:.6f}" y="{y:.6f}" z="{z:.6f}"/>'
-
-        # --- 3) Réécriture du texte ---
-        new_text = re.sub(
-            r'<vertex[^>]*x="([^"]+)"[^>]*y="([^"]+)"[^>]*z="([^"]+)"[^>]*/?>',
-            repl,
-            text
-        )
-
-        return new_text.encode("utf-8"), decal_z
-
-    except Exception as e:
-        if DEBUG:
-            print("⚠️ Erreur dans recenter_vertices (mode texte brut) :", e)
-        return model_data, 0.0
-
-def recenter_vertices(model_data):
-    """
     Recentrage XY uniquement (Z inchangé) en mode TEXTE BRUT.
     - Aucun parseur XML
     - Aucun namespace ajouté
@@ -2064,7 +1903,7 @@ def recenter_vertices(model_data):
         if not verts:
             if DEBUG:
                 print("⚠️ Aucun vertex trouvé dans recenter_vertices()")
-            return model_data, 0.0
+            return model_data, 0.0, []
 
         xs = [float(v[0]) for v in verts]
         ys = [float(v[1]) for v in verts]
@@ -2091,6 +1930,9 @@ def recenter_vertices(model_data):
             z = float(m.group(3))  # Z inchangé
             return f'<vertex x="{x:.6f}" y="{y:.6f}" z="{z:.6f}"/>'
 
+
+
+
         # --- 3) Réécriture du texte ---
         new_text = re.sub(
             r'<vertex[^>]*x="([^"]+)"[^>]*y="([^"]+)"[^>]*z="([^"]+)"[^>]*/?>',
@@ -2098,12 +1940,32 @@ def recenter_vertices(model_data):
             text
         )
 
-        return new_text.encode("utf-8"), decal_z
+        # Extraction des vertices après recentrage
+        verts_after = re.findall(
+            r'<vertex[^>]*x="([^"]+)"[^>]*y="([^"]+)"[^>]*z="([^"]+)"',
+            new_text
+        )
+
+        # Convertir en floats pour usage dans place_object_at_z0_in_3mf
+        vertices_centered = [
+            (float(v[0]), float(v[1]), float(v[2]))
+            for v in verts_after
+        ]
+
+        return new_text.encode("utf-8"), decal_z, vertices_centered
+
+
+
+
+
+
 
     except Exception as e:
         if DEBUG:
             print("⚠️ Erreur dans recenter_vertices (mode texte brut) :", e)
-        return model_data, 0.0
+
+
+        return model_data, 0.0, []
 
 
 def apply_common_transform_to_3dmodel(model_xml_bytes, geom_data_centered, ignore_transform):
@@ -2167,129 +2029,7 @@ def apply_common_transform_to_3mf_in_place(fc_3mf):
     return True
 
 
-#####################OOOOOOOOOOOOOOOOLLLLLLLLLLLLLLLLDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD
-def inject_geometry_into_qidislicer_3mf(old_3mf_path, new_3mf_path, new_model_xml_bytes,
-                                        decal_z, ignore_transform):
-    """
-    Version propre et complète (B2A) :
-    - conserve ton recentrage FreeCAD (déjà appliqué avant l'appel)
-    - aligne ensuite le mesh FreeCAD recentré sur le mesh Qidi
-    - remplace le mesh dans 3D/3dmodel.model
-    - corrige le Metadata Slic3r_PE_model.config
-    """
 
-    if DEBUG:
-        print('Début inject_geometry_into_qidislicer_3mf')
-
-    if not os.path.exists(old_3mf_path):
-        if DEBUG:
-            print('⚠️ Fichier Qidi introuvable :', old_3mf_path)
-        return
-
-    corrected_metadata = None
-    meta_name = "Metadata/Slic3r_PE_model.config"
-
-    with zipfile.ZipFile(old_3mf_path, "r") as zin, \
-         zipfile.ZipFile(new_3mf_path, "w", compression=zipfile.ZIP_DEFLATED) as zout:
-
-        for info in zin.infolist():
-            name = info.filename
-            data = zin.read(name)
-
-            # ------------------------------------------------------------
-            # 1) Remplacement du mesh + alignement FreeCAD → Qidi
-            # ------------------------------------------------------------
-            if name == "3D/3dmodel.model":
-
-                # --- 1) Extraire vertices Qidi ---
-                qidi_vertices = extract_vertices_from_model_xml(data)
-
-                # --- 2) Extraire vertices FreeCAD (déjà recentrés) ---
-                freecad_vertices, freecad_triangles = extract_vertices_and_triangles_from_model_xml(
-                    new_model_xml_bytes
-                )
-
-                # --- 3) Calcul translation FreeCAD → Qidi ---
-                translation = compute_translation_to_match_centers(
-                    freecad_vertices, qidi_vertices
-                )
-
-                if DEBUG:
-                    print("Translation FreeCAD → Qidi =", translation)
-
-                # --- 4) Appliquer translation ---
-                freecad_vertices_corrected = apply_translation(
-                    freecad_vertices, translation
-                )
-
-                # --- 5) Reconstruire XML FreeCAD aligné ---
-                aligned_model_xml = build_model_xml(
-                    freecad_vertices_corrected, freecad_triangles
-                )
-
-                # --- 6) Remplacer le mesh dans le XML Qidi ---
-                merged = replace_mesh_in_model_xml(data, aligned_model_xml)
-
-                # ------------------------------------------------------------
-                # 7) Correction Metadata QidiSlicer
-                # ------------------------------------------------------------
-                try:
-                    root = ET.fromstring(merged)
-                    new_root = ET.fromstring(aligned_model_xml)
-
-                    # Namespace dynamique
-                    if "}" in new_root.tag:
-                        ns_uri = new_root.tag.split("}")[0].strip("{")
-                        ns_tri = {"m": ns_uri}
-                        tris = new_root.findall(".//m:triangle", ns_tri)
-                    else:
-                        tris = new_root.findall(".//triangle")
-
-                    # Sécurité : fallback brut
-                    if not tris:
-                        tris = [t for t in new_root.iter() if t.tag.endswith("triangle")]
-
-                    lastid = len(tris) - 1
-                    if DEBUG:
-                        print(">>> Qidi Metadata fix → lastid =", lastid)
-
-                    # Charger et corriger le Metadata
-                    if meta_name in zin.namelist():
-                        meta_data = zin.read(meta_name)
-                        meta_root = ET.fromstring(meta_data)
-
-                        volume = meta_root.find(".//volume")
-                        if volume is not None:
-                            volume.set("firstid", "0")
-                            volume.set("lastid", str(lastid))
-
-                        corrected_metadata = ET.tostring(meta_root, encoding="utf-8")
-
-                    # Reconvertir le modèle Qidi avec le mesh remplacé
-                    merged = ET.tostring(root, encoding="utf-8")
-
-                except Exception as e:
-                    if DEBUG:
-                        print("⚠️ Erreur correction Metadata QidiSlicer :", e)
-
-                # Écriture du fichier 3D/3dmodel.model corrigé
-                zout.writestr(name, merged)
-                continue
-
-            # ------------------------------------------------------------
-            # 2) Écriture du Metadata corrigé
-            # ------------------------------------------------------------
-            if name == meta_name:
-                if corrected_metadata is not None:
-                    zout.writestr(name, corrected_metadata)
-                else:
-                    zout.writestr(name, data)
-                continue
-
-            # ------------------------------------------------------------
-            # 3) Recopie du reste
-            # ------------------------------------------------------------
-            zout.writestr(name, data)
 
 def inject_geometry_into_qidislicer_3mf(old_3mf_path, new_3mf_path, new_model_xml_bytes,
                                         decal_z, ignore_transform):
@@ -2400,7 +2140,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
 
     if not inject_possible:
         if DEBUG: print("✅ Inject not possible. File generated exclusively by FreeCAD :", fc_3mf)
-        return ""
+        return "", None
 
     # ------------------------------------------------------------
     # 2) Détection du slicer source
@@ -2427,7 +2167,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
                 os.remove(fc_3mf)
             if fc_3mf_existed_at_start and os.path.exists(old_3mf_backup):
                 shutil.move(old_3mf_backup, fc_3mf)
-            return "cancel"
+            return "cancel", None
 
         if action == "delete":
             if DEBUG: print("🗑️ Suppression de l’ancien 3MF incompatible.")
@@ -2439,7 +2179,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
 
     if not inject_possible:
         if DEBUG: print("⚠️ Injection impossible, export FreeCAD seul.")
-        return ""
+        return "", None
 
     # ------------------------------------------------------------
     # 5) Nettoyage du 3MF selon le slicer source
@@ -2471,7 +2211,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
     geom_entry = find_geom_file_in_3mf(fc_3mf)
     if not geom_entry:
         show_message(tr("error_title"), tr("error_no_geom"))
-        return ""
+        return "", None
 
     with zipfile.ZipFile(fc_3mf, 'r') as fc_zip:
         geom_data = fc_zip.read(geom_entry)
@@ -2486,18 +2226,18 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
         geom_data_centered, decal_z = recenter_vertices(geom_data)
     """
 
-
-    geom_data_centered, decal_z = recenter_vertices(geom_data)
-
-
     # ------------------------------------------------------------
     # 6 bis) Recentrage final pour QidiSlicer (pipeline dédié)
     # ------------------------------------------------------------
-    if slicer_source == "qidislicer":
-        geom_data_centered_final, decal_z_final = recenter_vertices(geom_data)
-    else:
-        geom_data_centered_final = geom_data
-        decal_z_final = 0
+
+
+
+    geom_data_centered, decal_z, vertices_centered = recenter_vertices(geom_data)
+
+
+
+    geom_data_centered_final = geom_data_centered
+    decal_z_final = 0 if slicer_source in ("qidislicer", "qidistudio") else decal_z
 
     # ------------------------------------------------------------
     # 7) Reconstruction du 3MF final
@@ -2525,7 +2265,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
         if os.path.exists(old_3mf):
             os.remove(old_3mf)
         if DEBUG: print("✅ Injection faite dans :", os.path.basename(fc_3mf))
-        return ""
+        return "", None
 
     # ------------------------------------------------------------
     # CAS QIDISTUDIO (multi-objets)
@@ -2585,7 +2325,8 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
         if os.path.exists(old_3mf):
             os.remove(old_3mf)
         if DEBUG: print("✅ Injection faite dans :", os.path.basename(fc_3mf))
-        return ""
+        return "", vertices_centered
+
 
     # ------------------------------------------------------------
     # CAS SLIC3R / CURA / FREECAD
@@ -2616,7 +2357,8 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
         if os.path.exists(old_3mf):
             os.remove(old_3mf)
         if DEBUG: print("✅ Injection faite dans :", os.path.basename(fc_3mf))
-        return ""
+        return "", vertices_centered
+
 
 
 
@@ -2640,7 +2382,7 @@ def recenter_model_in_3mf(fc_3mf, model_path, center_x=0, center_y=0):
         return False
 
     # Recentrage géométrique
-    new_model_data, decal_z = recenter_vertices(
+    new_model_data, decal_z, vertices_centered = recenter_vertices(
         buffer[model_path],
         center_x=center_x,
         center_y=center_y
@@ -2722,7 +2464,9 @@ def get_first_item_xyz_from_3mf(path, PLATEAU_X, PLATEAU_Y):
 
 
 
-def place_object_at_z0_in_3mf(path, cancel_rotation=False, center=True, x0=0, y0=0):
+def place_object_at_z0_in_3mf(path, mesh_vertices_from_freecad,
+                              cancel_rotation=False, center=True, x0=0, y0=0
+                              ):
     """
     Centre globalement la scène en XY si center=True et pose tous les objets du 3MF
     exactement sur le plateau (Z = 0), tout en respectant leurs positions relatives.
@@ -2827,6 +2571,10 @@ def place_object_at_z0_in_3mf(path, cancel_rotation=False, center=True, x0=0, y0
 
             vertices = []
 
+
+
+
+            """
             if obj_match:
                 vertices = [
                     (float(x), float(y), float(z))
@@ -2906,6 +2654,10 @@ def place_object_at_z0_in_3mf(path, cancel_rotation=False, center=True, x0=0, y0
             if not vertices:
                 print(f"❌ Aucun vertex trouvé pour objectid={oid}")
                 continue
+                
+            """
+
+            vertices = mesh_vertices_from_freecad
 
             # --- Appliquer la rotation R ---
             R = transforms_by_id[oid]
@@ -2935,8 +2687,12 @@ def place_object_at_z0_in_3mf(path, cancel_rotation=False, center=True, x0=0, y0
         Zmin_global = min(Zs)
 
         if center:
+
+
             Cx_global = (min(Xs) + max(Xs)) / 2
             Cy_global = (min(Ys) + max(Ys)) / 2
+            if DEBUG: print(f"[DEBUG] Cx_global utilisé = {Cx_global}")
+            if DEBUG: print(f"[DEBUG] Cy_global utilisé = {Cy_global}")
         else:
             Cx_global = 0
             Cy_global = 0
@@ -3084,19 +2840,23 @@ def export_replace_geometry():
         return
 
     (cfg, doc, base_name, fc_3mf, old_3mf_backup, fc_3mf_existed_at_start) = env
-    # fc_3mf = base_name + ".3mf"  # fichier Qidi OFFICIEL
-    """
-    # Fichier source immuable pour la position d’origine (optionnel)
+
+    # ------------------------------------------------------------
+    # Création du fichier source immuable (option 1 : diagnostic)
+    # ------------------------------------------------------------
     source_3mf = base_name + ".source.3mf"
+
+    # On crée le fichier source immuable une seule fois
     if fc_3mf_existed_at_start and not os.path.exists(source_3mf):
         try:
             shutil.copy(fc_3mf, source_3mf)
             if DEBUG:
-                print("Création du 3MF source immuable :", source_3mf)
+                print("Création du fichier source immuable :", source_3mf)
         except Exception as e:
             if DEBUG:
                 print("Impossible de créer le 3MF source immuable :", e)
-    """
+
+
     # ------------------------------------------------------------
     # 2) Vérification de la sélection
     # ------------------------------------------------------------
@@ -3189,40 +2949,59 @@ def export_replace_geometry():
     if DEBUG:
         print("Dans export_replace_geometry : >>> Avant inject_geometry, fichier =", fc_3mf)
 
-    if inject_geometry_if_possible(
-            base_name, fc_3mf, old_3mf_backup, fc_3mf_existed_at_start,
-            slicer_path, ignore_transform
-    ) == 'cancel':
+    status, vertices_centered = inject_geometry_if_possible(
+        base_name, fc_3mf, old_3mf_backup, fc_3mf_existed_at_start,
+        slicer_path, ignore_transform
+    )
+
+    if status == 'cancel':
         return
 
     # ------------------------------------------------------------
-    # 11) Lecture de la position APRÈS injection
-    #     (dans fc_3mf, qui est maintenant le 3MF Qidi + géométrie FreeCAD)
+    # 11) Lecture de la position ORIGINE (fichier immuable)
+    # ------------------------------------------------------------
+    x0_src, y0_src, z0_src = get_first_item_xyz_from_3mf(source_3mf, PLATEAU_X, PLATEAU_Y)
+    if DEBUG:
+        print("Position d'origine immuable :", x0_src, y0_src, z0_src)
+
+    # ------------------------------------------------------------
+    # 12) Lecture de la position APRÈS injection (dans fc_3mf)
     # ------------------------------------------------------------
     x03mf, y03mf, z03mf = get_first_item_xyz_from_3mf(fc_3mf, PLATEAU_X, PLATEAU_Y)
     if DEBUG:
-        print("---------------------------------------------x03mf =", x03mf,
-              "y03mf =", y03mf, "Z03mf =", z03mf)
+        print("Position après injection :", x03mf, y03mf, z03mf)
+        print("ΔX =", x03mf - x0_src, "ΔY =", y03mf - y0_src, "ΔZ =", z03mf - z0_src)
 
     # ------------------------------------------------------------
-    # 12) Recentrage / repositionnement
+    # 13) Recentrage / repositionnement
     # ------------------------------------------------------------
+
     if slicer_target == 'cura':
         patch_drop_to_buildplate_in_place(fc_3mf)
 
         if slicer_source != 'cura':
             # centrage + annulation rotation + placement Z
-            place_object_at_z0_in_3mf(fc_3mf, center=True, cancel_rotation=True,
-                                      x0=PLATEAU_X/2, y0=PLATEAU_Y/2)
+            place_object_at_z0_in_3mf(fc_3mf, mesh_vertices_from_freecad=vertices_centered,
+                                      cancel_rotation=True, center=True,
+                                      x0=PLATEAU_X/2, y0=PLATEAU_Y/2
+                                      )
         else:
             # juste recalcul Z
-            place_object_at_z0_in_3mf(fc_3mf, center=False, cancel_rotation=False)
+            place_object_at_z0_in_3mf(fc_3mf, mesh_vertices_from_freecad=vertices_centered,
+                                      cancel_rotation=False, center=False
+                                      )
 
     if ignore_transform:
-        place_object_at_z0_in_3mf(fc_3mf, True, True, PLATEAU_X / 2, PLATEAU_Y / 2)
+        place_object_at_z0_in_3mf(fc_3mf, mesh_vertices_from_freecad=vertices_centered,
+                                  cancel_rotation=True, center=True,
+                                  x0=PLATEAU_X / 2, y0=PLATEAU_Y / 2
+                                  )
     elif slicer_target != 'cura':
         # on réutilise la position lue après injection
-        place_object_at_z0_in_3mf(fc_3mf, False, True, x03mf, y03mf)
+        place_object_at_z0_in_3mf(fc_3mf, mesh_vertices_from_freecad=vertices_centered,
+                                  cancel_rotation=False, center=True,
+                                  x0=x03mf, y0=y03mf
+                                  )
 
     # ------------------------------------------------------------
     # 13) Fichier final pour le slicer
