@@ -45,8 +45,6 @@ from PySide import QtGui, QtCore
 from typing import Dict, Optional
 import gc
 import tempfile
-import traceback
-
 
 
 # -------------------------
@@ -54,9 +52,13 @@ import traceback
 # -------------------------
 INI_FILE = os.path.join(os.path.dirname(__file__), "3D_Printer_3mf_Workflow.ini")
 PLATEAU_X, PLATEAU_Y, PLATEAU_Z = 240, 240, 0
+global_origin_x = 0.0
+global_origin_y = 0.0
+global_origin_z = 0.0
+
 MAX_OLD_BACKUPS = 5
 
-DEBUG = True
+DEBUG = False
 
 if platform.system() == "Windows":
     DEFAULT_SLICER_EXE = r"C:\Program Files\QIDIStudio\qidi-studio.exe"
@@ -733,14 +735,16 @@ def detect_slicer_target_from_path(path):
             "ideamaker",
             "raise3d",
     )):
-        return "slic3r"
+        #return "slic3r"
+        return "qidislicer"
 
     # Cura
     if "cura" in p:
         #return "cura"
         return "qidislicer"
 
-    return "slic3r"
+    # return "slic3r"
+    return "qidislicer"
 
 
 
@@ -834,7 +838,6 @@ def extract_transforms_from_3mf(path_3mf: str) -> Transforms3MF:
                         tr.assemble_items.append(Transform3MF(t))
 
     return tr
-
 
 
 def extract_vertices_from_3mf(path_3mf: str):
@@ -995,15 +998,12 @@ def apply_saved_transforms_to_3mf(
                     mesh_vertices_from_freecad
                 )
 
-                print(xml)
+
                 zout.writestr(info.filename, xml.encode("utf-8"))
             else:
                 zout.writestr(info.filename, data)
 
-
-
     shutil.move(tmp_zip.name, path_3mf)
-    print("=== APPLY DONE ===")
 
 
 def extract_vertices_and_triangles_from_model_xml(xml_bytes):
@@ -1058,8 +1058,6 @@ def extract_vertices_from_model_xml(xml_bytes):
     return vertices
 
 
-
-
 def compute_mesh_center(vertices):
     xs = [v[0] for v in vertices]
     ys = [v[1] for v in vertices]
@@ -1071,14 +1069,19 @@ def compute_mesh_center(vertices):
     )
 
 def compute_translation_to_match_centers(freecad_vertices, qidi_vertices):
+    print ('compute_translation_to_match_centers')
+    global global_origin_x, global_origin_y, global_origin_z
+    print('global_origin_x', global_origin_x)
     center_fc = compute_mesh_center(freecad_vertices)
     center_qidi = compute_mesh_center(qidi_vertices)
 
-    tx = center_qidi[0] - center_fc[0]
-    ty = center_qidi[1] - center_fc[1]
+    tx = center_qidi[0] - center_fc[0] - global_origin_x
+    ty = center_qidi[1] - center_fc[1] - global_origin_y
     tz = center_qidi[2] - center_fc[2]
 
     return (tx, ty, tz)
+
+
 
 def apply_translation(vertices, translation):
     tx, ty, tz = translation
@@ -1117,29 +1120,32 @@ def analyse_fichier_3mf(file_path: str) -> Dict[str, Optional[str]]:
     def normaliser_logiciel(nom: str) -> str:
         if not nom:
             return "Inconnu"
-
+        print('normaliser_logiciel nom : ', nom)
         txt = nom.strip()
         lower = txt.lower()
 
         # Table de correspondance
         MAPPINGS = {
-            # Qidi family
             "qidistudio": "qidistudio",
-            "qidislicer": "qidislicer",
+
             "bambu": "qidistudio",  # Orca détecté comme Bambu
             "orca": "qidistudio",  # même pipeline que QidiStudio
-            "creality": "qidistudio",  # Creality Print = Cura modifié = pipeline QidiStudio
+            "creality": "qidistudio",  # Creality Print
+
+            "qidislicer": "qidislicer",
+            "cura": "qidislicer",
+            "superslicer": "qidislicer",
 
             # Prusa-like (Slic3r family)
             "prusaslicer": "slic3r",
-            "superslicer": "slic3r",
+            #"superslicer": "slic3r",
             "anycubic": "slic3r",  # Anycubic Slicer = fork Prusa
             "flashprint": "slic3r",  # FlashPrint 5 = structure Prusa-like
             "ideamaker": "slic3r",  # IdeaMaker = XML proche Prusa
             "raise3d": "slic3r",  # Raise3D Slicer = IdeaMaker rebadgé
 
-            # Cura family
-            "cura": "cura",
+
+
             # FreeCAD
             "freecad": "freecad",
         }
@@ -1147,29 +1153,16 @@ def analyse_fichier_3mf(file_path: str) -> Dict[str, Optional[str]]:
         # Recherche automatique
         for key, value in MAPPINGS.items():
             if key in lower:
+                print('value', value)
                 return value
 
         # Sinon : par défaut : idem prusa
 
         return "slic3r"
 
+
     with zipfile.ZipFile(file_path, 'r') as z:
-        """
-        if DEBUG:
-            # ------------------------------------------------------------
-            # DEBUG : afficher les 9 premières lignes du fichier 3D/3dmodel.model
-            # ------------------------------------------------------------
-            try:
-                with z.open('3D/3dmodel.model') as f:
-                    raw = f.read().decode('utf-8', errors='ignore')
-                    lines = raw.splitlines()
-                    print("\n===== DEBUG: Premières lignes de 3dmodel.model =====")
-                    for i, line in enumerate(lines[:9], start=1):
-                        print(f"{i:02d}: {line}")
-                    print("====================================================\n")
-            except Exception as e:
-                print("DEBUG: Impossible de lire 3D/3dmodel.model :", e)
-        """
+
         # ------------------------------------------------------------
         # 1. Compter les objets 3D (en filtrant les objets vides)
         # ------------------------------------------------------------
@@ -1242,8 +1235,7 @@ def analyse_fichier_3mf(file_path: str) -> Dict[str, Optional[str]]:
                         continue
 
                     if name.startswith("cura:"):
-                        result['logiciel'] = "cura"
-                        result['logiciel'] = "qidislicer" ###########################################################################
+                        result['logiciel'] = normaliser_logiciel("cura")
                         logiciel_trouve = True
                         break
 
@@ -1279,6 +1271,7 @@ def analyse_fichier_3mf(file_path: str) -> Dict[str, Optional[str]]:
                 else:
                     result['logiciel'] = "unknown"
 
+    print("result['logiciel']", result['logiciel'])
     return result
 
 
@@ -1492,7 +1485,6 @@ def clean_multi_object_style(src_3mf, dst_3mf):
             if n.startswith("3D/Objects/") and n.endswith(".model")
         ]
 
-        if DEBUG: print(f"📁 Objets trouvés : {object_models}")
 
         if not object_models:
             # Cas Cura / Prusa / QidiSlicer / FreeCAD : mono-objet standard
@@ -1504,19 +1496,12 @@ def clean_multi_object_style(src_3mf, dst_3mf):
         keep_model = object_models[0]
         to_delete = object_models[1:]
 
-        if DEBUG: print(f"➡️ Objet conservé : {keep_model}")
-        if DEBUG: print(f"🗑️ Objets supprimés : {to_delete}")
+
 
         # --- 2) Nettoyage CHIRURGICAL du 3dmodel.model ---
         model_txt = zin.read(model_path).decode("utf-8")
 
-        """
-        # Détection du parent réel
-        parent_pattern = (
-            rf'<object[^>]*id="(\d+)"[^>]*>[\s\S]*?'
-            rf'<component[^>]*p:path="/{keep_model}"'
-        )
-        """
+
 
         parent_pattern = (
             rf'<object[^>]*id="(\d+)"[^>]*>[\s\S]*?'
@@ -1629,7 +1614,7 @@ def clean_multi_object_style(src_3mf, dst_3mf):
 
                 zout.writestr(name, zin.read(item.filename))
 
-    if DEBUG: print("✅ Nettoyage CHIRURGICAL terminé.")
+    if DEBUG: print("✅ Nettoyage terminé.")
     if DEBUG: print(f"➡️ Objet final conservé : {keep_model} (id={keep_object_id})")
     if DEBUG: print(f"➡️ Fichier nettoyé : {dst_3mf}")
 
@@ -1807,7 +1792,7 @@ def export_freecad_files(selection, base_name, fc_3mf, generate_stl,
     """
     if DEBUG:
         print('Début export_freecad_files')
-        print([obj.Name for obj in selection])  ##########################
+
 
     # ------------------------------------------------------------
     # Export 3MF FreeCAD
@@ -1891,9 +1876,7 @@ def handle_empty_plate(fc_3mf_existed_at_start, old_3mf_backup, fc_3mf):
     # 1) Restaurer l'ancien 3MF = Copie old_3mf_backup en fc_3mf et relance la macro
     # ----------------------------------------------------------------------------
     if clicked == restore_btn:
-        # if os.path.exists(fc_3mf):
-        #    print('Effacement du fichier ', fc_3mf)
-        #    os.remove(fc_3mf)
+
         if DEBUG: print('copy ', os.path.basename(old_3mf_backup), 'vers', os.path.basename(fc_3mf))
         shutil.copy(old_3mf_backup, fc_3mf)
 
@@ -1924,77 +1907,110 @@ def handle_empty_plate(fc_3mf_existed_at_start, old_3mf_backup, fc_3mf):
         return False
 
 
+def origin_in_3mf(path_3mf):
+    """
+    Retourne (global_origin_x, global_origin_y, global_origin_z)
+    selon les 4 cas définis.
+    """
 
+    print("\n=== origin_in_3mf ===")
+    print("path_3mf =", path_3mf)
 
-def ensure_cura_drop_to_buildplate(model_data):
-    if DEBUG:
-        print(" Ensure_cura_drop_to_buildplate (texte brut)")
+    # Cas 1 : pas de 3MF
+    if not path_3mf or not os.path.exists(path_3mf):
+        print("Cas 1 : pas de fichier 3MF → (0,0,0)")
+        return 0.0, 0.0, 0.0
 
-    text = model_data.decode("utf-8")
+    try:
+        with zipfile.ZipFile(path_3mf, 'r') as z:
+            namelist = z.namelist()
+            print("Fichiers dans le ZIP :", namelist)
 
-    # Vérifier si metadata existe déjà
-    if 'cura:drop_to_buildplate' in text:
-        # On force la valeur à True
-        text = re.sub(
-            r'<metadata[^>]*name="cura:drop_to_buildplate"[^>]*>.*?</metadata>',
-            '<metadata name="cura:drop_to_buildplate">True</metadata>',
-            text
-        )
-        return text.encode("utf-8")
+            # Cas 2 : pas de fichier Slic3r_PE_model.config
+            cfg_name = None
+            for name in namelist:
+                if name.lower().endswith("slic3r_pe_model.config"):
+                    cfg_name = name
+                    break
 
-    # Trouver <object> et <mesh>
-    m_obj = re.search(r'<object[^>]*>', text)
-    m_mesh = re.search(r'<mesh[^>]*>', text)
+            print("Fichier config trouvé :", cfg_name)
 
-    if not m_obj:
-        return model_data
+            if cfg_name is None:
+                print("Cas 2 : pas de config → (0,0,0)")
+                return 0.0, 0.0, 0.0
 
-    # Construction du bloc metadatagroup
-    md_block = (
-        '    <metadatagroup>\n'
-        '      <metadata name="cura:drop_to_buildplate">True</metadata>\n'
-        '    </metadatagroup>\n'
-    )
+            # Lecture brute du fichier config
+            text = z.read(cfg_name).decode("utf-8", errors="ignore")
 
-    if m_mesh:
-        # Insérer juste avant <mesh>
-        idx = m_mesh.start()
-        new_text = text[:idx] + md_block + text[idx:]
-    else:
-        # Sinon insérer juste après <object>
-        idx = m_obj.end()
-        new_text = text[:idx] + "\n" + md_block + text[idx:]
+            print("Lecture matrice + offsets…")
 
-    return new_text.encode("utf-8")
+            # Extraction naïve
+            def extract_value(key):
+                prefix = f'key="{key}"'
+                idx = text.find(prefix)
+                if idx == -1:
+                    print(f"Clé '{key}' introuvable")
+                    return None
+                start = text.find('value="', idx)
+                if start == -1:
+                    print(f"value=\"...\" introuvable pour '{key}'")
+                    return None
+                start += len('value="')
+                end = text.find('"', start)
+                if end == -1:
+                    print(f"Fin de valeur introuvable pour '{key}'")
+                    return None
+                val = text[start:end]
+                print(f"{key} =", val)
+                return val
 
+            # Matrice
+            matrix_str = extract_value("matrix")
+            if matrix_str:
+                parts = matrix_str.split()
+                if len(parts) == 16:
+                    matrix = list(map(float, parts))
+                    print("Matrice lue :", matrix)
+                else:
+                    print("Matrice invalide :", matrix_str)
+                    matrix = None
+            else:
+                print("Aucune matrice trouvée")
+                matrix = None
 
+            # Offsets
+            ox = extract_value("source_offset_x")
+            oy = extract_value("source_offset_y")
+            oz = extract_value("source_offset_z")
 
+            ox = float(ox) if ox else 0.0
+            oy = float(oy) if oy else 0.0
+            oz = float(oz) if oz else 0.0
 
-def patch_drop_to_buildplate_in_place(path):
-    if DEBUG: print('Ajout Mise à plat pour le slicer CURA', os.path.basename(path))
-    tmp = path + ".tmp"
+            print("Offsets lus :", ox, oy, oz)
 
-    # Lire
-    with zipfile.ZipFile(path, 'r') as zin:
-        buffer = {name: zin.read(name) for name in zin.namelist()}
+            # Cas 3 : matrice identité ?
+            if matrix is None:
+                print("Pas de matrice → identité → (0,0,0)")
+                return 0.0, 0.0, 0.0
 
-    # Modifier
-    if "3D/3dmodel.model" in buffer:
-        buffer["3D/3dmodel.model"] = ensure_cura_drop_to_buildplate(
-            buffer["3D/3dmodel.model"]
-        )
+            ident = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]
+            tol = 1e-6
+            matrix_is_identity = all(abs(a-b) < tol for a,b in zip(matrix, ident))
 
-    # Écrire dans un fichier temporaire
-    with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as zout:
-        for name, data in buffer.items():
-            zout.writestr(name, data)
+            print("matrix_is_identity =", matrix_is_identity)
 
-    # Remplacer l’original
-    shutil.move(tmp, path)
+            if matrix_is_identity:
+                print("Cas 3 : matrice identité → (0,0,0)")
+                return 0.0, 0.0, 0.0
 
+            # Cas 4 : matrice non-identité
+            print("Cas 4 : matrice non-identité → retourne offsets")
+            return ox, oy, oz
 
-
-# Recentre les sommets en XY et calcule le decal_z pour placement correct
+    except Exception as e:
+        print("Exception dans origin_in_3mf :", e)
+        return 0.0, 0.0, 0.0
 
 
 def recenter_vertices(model_data):
@@ -2107,12 +2123,9 @@ def apply_common_transform_to_3dmodel(model_xml_bytes, geom_data_centered, ignor
 
     return updated.encode("utf-8")
 
-
-
-
-
 def inject_geometry_into_qidislicer_3mf(old_3mf_path, new_3mf_path, new_model_xml_bytes,
-                                        decal_z, ignore_transform):
+                                        decal_z, ignore_transform,
+                                        ):
 
     if DEBUG:
         print("Début inject_geometry_into_qidislicer_3mf (version texte brut)")
@@ -2147,7 +2160,8 @@ def inject_geometry_into_qidislicer_3mf(old_3mf_path, new_3mf_path, new_model_xm
 
                 # --- Translation FreeCAD → Qidi ---
                 translation = compute_translation_to_match_centers(
-                    freecad_vertices, qidi_vertices
+                    freecad_vertices,
+                    qidi_vertices,
                 )
 
                 if DEBUG:
@@ -2278,11 +2292,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
         shutil.copy(old_3mf_backup, cleaned_old_3mf)
         keep_model = "3D/Objects/object_1.model"
 
-    # 🔥 Vérification critique : le fichier cleaned_old_3mf existe-t-il ?
-    if slicer_source == "qidistudio" and (
-            keep_object_id is None or not os.path.exists(cleaned_old_3mf)
-    ):
-        if DEBUG: print("⚠️ Nettoyage QidiStudio échoué → utilisation du 3MF d'origine")
+    if slicer_source == "qidistudio" or not os.path.exists(cleaned_old_3mf):
         old_3mf = old_3mf_backup
     else:
         old_3mf = cleaned_old_3mf
@@ -2321,6 +2331,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
     # CAS QIDISLICER (mono-objet)
     # ------------------------------------------------------------
     if slicer_source == "qidislicer":
+
         vertices_corrected = inject_geometry_into_qidislicer_3mf(
             old_3mf,
             tmp_new,
@@ -2328,6 +2339,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
             decal_z_final,
             ignore_transform
         )
+
 
         # Remplacement final
         gc.collect()
@@ -2403,7 +2415,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
     # ------------------------------------------------------------
     # CAS SLIC3R / CURA / FREECAD
     # ------------------------------------------------------------
-    if slicer_source in ("slic3r", "cura", "freecad"):
+    if slicer_source in ("slic3r", "freecad"):
 
         with zipfile.ZipFile(old_3mf, 'r') as old_zip, \
                 zipfile.ZipFile(tmp_new, 'w', compression=zipfile.ZIP_DEFLATED) as new_zip:
@@ -2434,14 +2446,14 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
 
 
 def fix_item_ignore_transform(path_3mf, vertices_centered, center_xy=True, x0=None, y0=None):
-    print("Debut fix_item_ignore_transform")
+    if DEBUG: print("Debut fix_item_ignore_transform")
 
     # --- Lire tout le ZIP ---
     with zipfile.ZipFile(path_3mf, 'r') as zin:
         contents = {info.filename: zin.read(info.filename) for info in zin.infolist()}
 
     if "3D/3dmodel.model" not in contents:
-        print("⚠️ 3D/3dmodel.model introuvable")
+        if DEBUG: print("⚠️ 3D/3dmodel.model introuvable")
         return
 
     xml = contents["3D/3dmodel.model"].decode("utf-8", errors="ignore")
@@ -2449,7 +2461,7 @@ def fix_item_ignore_transform(path_3mf, vertices_centered, center_xy=True, x0=No
     # --- Trouver tous les <item> ---
     items = re.findall(r'<item[^>]*transform="([^"]+)"', xml)
     if not items:
-        print("⚠️ Aucun <item> trouvé")
+        if DEBUG: print("⚠️ Aucun <item> trouvé")
         return
 
     # --- Calcul du transform global ---
@@ -2487,7 +2499,6 @@ def fix_item_ignore_transform(path_3mf, vertices_centered, center_xy=True, x0=No
             else:
                 zout.writestr(name, data)
 
-    print(f"✅ fix_item_ignore_transform appliqué à {len(items)} item(s) :", new_transform)
 
 
 
@@ -2517,8 +2528,6 @@ def fix_item_ignore_transform(path_3mf, vertices_centered, center_xy=True, x0=No
         Utilisées uniquement si center_xy=True.
     """
 
-    print("Debut fix_item_ignore_transform")
-
     # --- Lire tout le ZIP ---
     with zipfile.ZipFile(path_3mf, 'r') as zin:
         contents = {info.filename: zin.read(info.filename) for info in zin.infolist()}
@@ -2533,14 +2542,13 @@ def fix_item_ignore_transform(path_3mf, vertices_centered, center_xy=True, x0=No
     # 1) MODE ACTUEL (si vertices_centered est fourni)
     # ============================================================
     if vertices_centered:
-        print("ℹ️ Utilisation de vertices_centered (mode actuel)")
         vertices = vertices_centered
 
     else:
         # ============================================================
         # 2) MODE UNIVERSAL FALLBACK (si vertices_centered est None)
         # ============================================================
-        print("ℹ️ vertices_centered = None → extraction directe depuis le 3MF")
+
 
         verts = re.findall(
             r'<vertex[^>]*x="([^"]+)"[^>]*y="([^"]+)"[^>]*z="([^"]+)"',
@@ -2604,7 +2612,7 @@ def fix_item_ignore_transform(path_3mf, vertices_centered, center_xy=True, x0=No
             else:
                 zout.writestr(name, data)
 
-    print(f"✅ fix_item_ignore_transform appliqué : {new_transform}")
+
 
 
 
@@ -2746,11 +2754,10 @@ def run_extra_commands(extra_cmds):
 # Routine principale : exporte la sélection en 3MF/STL, injecte géométrie,
 # lance slicer et commandes externes
 # ----------------------------------------------------------------------------
-
 def export_replace_geometry():
-    if DEBUG:
-        print("_________________________________")
-        print('\n\n>>> MACRO 3D_printer_3mf_workflow <<<')
+    global global_origin_x, global_origin_y, global_origin_z
+    print("_________________________________")
+    print('\n\n>>> MACRO 3D_printer_3mf_workflow <<<')
 
     # ------------------------------------------------------------
     # 1) Préparation de l’environnement
@@ -2855,6 +2862,10 @@ def export_replace_geometry():
             print('Copie de fc_3mf', os.path.basename(fc_3mf), 'vers old_3mf_backup',
                   os.path.basename(old_3mf_backup))
 
+    # Récupération des coordonnées, dans le globaln de l'origine
+    global_origin_x, global_origin_y, global_origin_z = origin_in_3mf(fc_3mf)
+    print('coordonnées globales', global_origin_x, global_origin_y, global_origin_z, "===============================================================================================")
+
     # ------------------------------------------------------------
     # 9) Export FreeCAD → 3MF (dans fc_3mf, comme avant)
     # ------------------------------------------------------------
@@ -2873,10 +2884,6 @@ def export_replace_geometry():
         base_name, fc_3mf, old_3mf_backup, fc_3mf_existed_at_start,
         slicer_path, ignore_transform
     )
-
-
-
-
 
     if status == 'cancel':
         return
@@ -2901,52 +2908,23 @@ def export_replace_geometry():
         # ------------------------------------------------------------
         # 13) Recentrage / repositionnement
         # ------------------------------------------------------------
-        if slicer_target == 'cura':
 
-            patch_drop_to_buildplate_in_place(fc_3mf)
-            """
-            if slicer_source != 'cura':
-                # centrage + annulation rotation + placement Z
-                transf = extract_transforms_from_3mf(fc_3mf)
-                apply_saved_transforms_to_3mf(
-                    fc_3mf,
-                    transf,
-                    vertices_centered,
-                    center=True,
-                    cancel_rotation=True,
-                    x0=PLATEAU_X / 2,
-                    y0=PLATEAU_Y / 2
-                )
-            
-            else:
-            """
-            # juste recalcul Z
-            transf = extract_transforms_from_3mf(fc_3mf)
-            apply_saved_transforms_to_3mf(
-                fc_3mf,
-                transf,
-                vertices_centered,
-                center=False,
-                cancel_rotation=False
-            )
 
-        elif slicer_target != 'cura':
-            # on réutilise la position lue après injection
-            transf = extract_transforms_from_3mf(fc_3mf)
 
-            apply_saved_transforms_to_3mf(
-                fc_3mf,
-                transf,
-                vertices_centered,
-                center=True,
-                cancel_rotation=False,
-                x0=x03mf,
-                y0=y03mf
-            )
+        # on réutilise la position lue après injection
+        transf = extract_transforms_from_3mf(fc_3mf)
 
-    else:
-        if DEBUG:
-            print("Pas d'injection → pas de transforms (le slicer recentrera)")
+        apply_saved_transforms_to_3mf(
+            fc_3mf,
+            transf,
+            vertices_centered,
+            center=True,
+            cancel_rotation=False,
+            x0=x03mf,
+            y0=y03mf
+        )
+
+
 
     # ------------------------------------------------------------
     # 13) Fichier final pour le slicer
@@ -2971,18 +2949,13 @@ def export_replace_geometry():
     # ------------------------------------------------------------
     # 14) Lancement du slicer
     # ------------------------------------------------------------
+    print('Lancement du slicer')
     launch_slicer_if_needed(slicer_path, launch_slicer, final_3mf)
 
     # ------------------------------------------------------------
     # 15) Commandes externes
     # ------------------------------------------------------------
     run_extra_commands(extra_cmds)
-
-
-
-
-
-
 
 
 export_replace_geometry()
@@ -3003,54 +2976,52 @@ export_replace_geometry()
 
 
 
+if False:
+
+    import traceback
+    import inspect
+    import ast
+
+    def _debug_list_functions():
+        print("\n=== LISTE DES FONCTIONS DANS LA MACRO ===")
+        for name, obj in globals().items():
+            if inspect.isfunction(obj):
+                print(name)
+        print("=== FIN DE LISTE ===\n")
+
+    _debug_list_functions()
 
 
 
-import inspect
+    def _debug_find_unused_functions(path):
+        with open(path, "r", encoding="utf-8") as f:
+            tree = ast.parse(f.read())
 
-def _debug_list_functions():
-    print("\n=== LISTE DES FONCTIONS DANS LA MACRO ===")
-    for name, obj in globals().items():
-        if inspect.isfunction(obj):
-            print(name)
-    print("=== FIN DE LISTE ===\n")
+        # 1) Récupérer toutes les fonctions définies dans le fichier
+        defined_funcs = set()
+        for node in tree.body:
+            if isinstance(node, ast.FunctionDef):
+                defined_funcs.add(node.name)
 
-_debug_list_functions()
+        # 2) Récupérer tous les appels de fonctions dans le fichier
+        called_funcs = set()
+        class CallVisitor(ast.NodeVisitor):
+            def visit_Call(self, node):
+                if isinstance(node.func, ast.Name):
+                    called_funcs.add(node.func.id)
+                self.generic_visit(node)
 
+        CallVisitor().visit(tree)
 
+        # 3) Fonctions définies mais jamais appelées
+        unused = sorted(defined_funcs - called_funcs)
 
-import ast
-import inspect
+        print("\n=== FONCTIONS DÉFINIES MAIS JAMAIS APPELÉES ===")
+        for name in unused:
+            print("  -", name)
+        print("=== FIN ===\n")
 
-def _debug_find_unused_functions(path):
-    with open(path, "r", encoding="utf-8") as f:
-        tree = ast.parse(f.read())
-
-    # 1) Récupérer toutes les fonctions définies dans le fichier
-    defined_funcs = set()
-    for node in tree.body:
-        if isinstance(node, ast.FunctionDef):
-            defined_funcs.add(node.name)
-
-    # 2) Récupérer tous les appels de fonctions dans le fichier
-    called_funcs = set()
-    class CallVisitor(ast.NodeVisitor):
-        def visit_Call(self, node):
-            if isinstance(node.func, ast.Name):
-                called_funcs.add(node.func.id)
-            self.generic_visit(node)
-
-    CallVisitor().visit(tree)
-
-    # 3) Fonctions définies mais jamais appelées
-    unused = sorted(defined_funcs - called_funcs)
-
-    print("\n=== FONCTIONS DÉFINIES MAIS JAMAIS APPELÉES ===")
-    for name in unused:
-        print("  -", name)
-    print("=== FIN ===\n")
-
-# Lancer l’analyse
-_debug_find_unused_functions(__file__)
+    # Lancer l’analyse
+    _debug_find_unused_functions(__file__)
 
 
