@@ -1,3 +1,5 @@
+
+
 # -*- coding: utf-8 -*-
 """
 Macro FreeCAD multilingue : export 3MF/STL avec contrôle de tessellation,
@@ -59,6 +61,7 @@ global_origin_z = 0.0
 MAX_OLD_BACKUPS = 5
 
 DEBUG = False
+DEBUGPIPE = True
 
 if platform.system() == "Windows":
     DEFAULT_SLICER_EXE = r"C:\Program Files\QIDIStudio\qidi-studio.exe"
@@ -1068,15 +1071,15 @@ def compute_mesh_center(vertices):
         (min(zs) + max(zs)) / 2.0,
     )
 
-def compute_translation_to_match_centers(freecad_vertices, qidi_vertices):
-    print ('compute_translation_to_match_centers')
+def compute_translation_to_match_centers(freecad_vertices, vertices_3mf):
+    if DEBUGPIPE: print ('Début compute_translation_to_match_centers')
     global global_origin_x, global_origin_y, global_origin_z
     print('global_origin_x', global_origin_x)
     center_fc = compute_mesh_center(freecad_vertices)
-    center_qidi = compute_mesh_center(qidi_vertices)
+    center_qidi = compute_mesh_center(vertices_3mf)
 
-    tx = center_qidi[0] - center_fc[0] - global_origin_x
-    ty = center_qidi[1] - center_fc[1] - global_origin_y
+    tx = center_qidi[0] - center_fc[0]
+    ty = center_qidi[1] - center_fc[1]
     tz = center_qidi[2] - center_fc[2]
 
     return (tx, ty, tz)
@@ -1120,7 +1123,6 @@ def analyse_fichier_3mf(file_path: str) -> Dict[str, Optional[str]]:
     def normaliser_logiciel(nom: str) -> str:
         if not nom:
             return "Inconnu"
-        print('normaliser_logiciel nom : ', nom)
         txt = nom.strip()
         lower = txt.lower()
 
@@ -1153,7 +1155,6 @@ def analyse_fichier_3mf(file_path: str) -> Dict[str, Optional[str]]:
         # Recherche automatique
         for key, value in MAPPINGS.items():
             if key in lower:
-                print('value', value)
                 return value
 
         # Sinon : par défaut : idem prusa
@@ -1271,7 +1272,6 @@ def analyse_fichier_3mf(file_path: str) -> Dict[str, Optional[str]]:
                 else:
                     result['logiciel'] = "unknown"
 
-    print("result['logiciel']", result['logiciel'])
     return result
 
 
@@ -1417,7 +1417,7 @@ def correct_item_transform_z(model_data_centered, transform_str):
     NE TOUCHE PAS AU XML.
     Ne parse pas le fichier avec ElementTree.
     """
-
+    if DEBUGPIPE: print('Début correct_item_transform_z')
     text = model_data_centered.decode("utf-8", errors="replace")
 
     # --- 1) Extraction des vertices par regex ---
@@ -1622,6 +1622,7 @@ def clean_multi_object_style(src_3mf, dst_3mf):
 
 
 def replace_mesh_in_model_xml(old_model_xml_bytes, new_model_xml_bytes):
+    if correct_item_transform_z:print('Début replace_mesh_in_model_xml')
     old_text = old_model_xml_bytes.decode("utf-8", errors="replace")
     new_text = new_model_xml_bytes.decode("utf-8", errors="replace")
 
@@ -1790,7 +1791,7 @@ def export_freecad_files(selection, base_name, fc_3mf, generate_stl,
         True  → export OK
         False → erreur ou restauration
     """
-    if DEBUG:
+    if DEBUGPIPE:
         print('Début export_freecad_files')
 
 
@@ -1833,7 +1834,7 @@ def export_freecad_files(selection, base_name, fc_3mf, generate_stl,
 
 
 def handle_empty_plate(fc_3mf_existed_at_start, old_3mf_backup, fc_3mf):
-    if DEBUG: print('Fonction handle_empty_plate si plateau vide propose copie old_3mf_backup vers fc_3mf')
+    if DEBUGPIPE: print('Début handle_empty_plate')
     """
     Analyse le plateau vide sur fc_3mf:
     - Si un 3MF existait avant l’export FreeCAD
@@ -1913,8 +1914,7 @@ def origin_in_3mf(path_3mf):
     selon les 4 cas définis.
     """
 
-    print("\n=== origin_in_3mf ===")
-    print("path_3mf =", path_3mf)
+    if DEBUGPIPE: print("Début origin_in_3mf")
 
     # Cas 1 : pas de 3MF
     if not path_3mf or not os.path.exists(path_3mf):
@@ -1924,7 +1924,6 @@ def origin_in_3mf(path_3mf):
     try:
         with zipfile.ZipFile(path_3mf, 'r') as z:
             namelist = z.namelist()
-            print("Fichiers dans le ZIP :", namelist)
 
             # Cas 2 : pas de fichier Slic3r_PE_model.config
             cfg_name = None
@@ -2021,8 +2020,8 @@ def recenter_vertices(model_data):
     - Compatible avec tous les slicers
     """
 
-    if DEBUG:
-        print(" Recenter_vertices : recentrage automatique XYZ")
+    if DEBUGPIPE:
+        print(" Début Recenter_vertices")
 
     try:
         text = model_data.decode("utf-8")
@@ -2091,6 +2090,7 @@ def recenter_vertices(model_data):
 
 
 def apply_common_transform_to_3dmodel(model_xml_bytes, geom_data_centered, ignore_transform):
+    if DEBUGPIPE: print('Début apply_common_transform_to_3dmodel')
     if not ignore_transform:
         return model_xml_bytes
 
@@ -2127,8 +2127,8 @@ def inject_geometry_into_qidislicer_3mf(old_3mf_path, new_3mf_path, new_model_xm
                                         decal_z, ignore_transform,
                                         ):
 
-    if DEBUG:
-        print("Début inject_geometry_into_qidislicer_3mf (version texte brut)")
+    if DEBUGPIPE:
+        print("Début inject_geometry_into_qidislicer_3mf")
 
     if not os.path.exists(old_3mf_path):
         if DEBUG:
@@ -2151,7 +2151,7 @@ def inject_geometry_into_qidislicer_3mf(old_3mf_path, new_3mf_path, new_model_xm
             if name == "3D/3dmodel.model":
 
                 # --- Extraction vertices Qidi ---
-                qidi_vertices = extract_vertices_from_model_xml(data)
+                vertices_3mf = extract_vertices_from_model_xml(data)
 
                 # --- Extraction vertices FreeCAD ---
                 freecad_vertices, freecad_triangles = extract_vertices_and_triangles_from_model_xml(
@@ -2161,7 +2161,7 @@ def inject_geometry_into_qidislicer_3mf(old_3mf_path, new_3mf_path, new_model_xm
                 # --- Translation FreeCAD → Qidi ---
                 translation = compute_translation_to_match_centers(
                     freecad_vertices,
-                    qidi_vertices,
+                    vertices_3mf,
                 )
 
                 if DEBUG:
@@ -2224,7 +2224,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
     """
     Injection géométrique dans un fichier 3MF existant.
     """
-    if DEBUG: print('inject_geometry_if_possible')
+    if DEBUGPIPE: print('Début inject_geometry_if_possible')
 
     # ------------------------------------------------------------
     # 1) Vérifier si injection possible
@@ -2446,7 +2446,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
 
 
 def fix_item_ignore_transform(path_3mf, vertices_centered, center_xy=True, x0=None, y0=None):
-    if DEBUG: print("Debut fix_item_ignore_transform")
+    if DEBUGPIPE: print("Debut fix_item_ignore_transform")
 
     # --- Lire tout le ZIP ---
     with zipfile.ZipFile(path_3mf, 'r') as zin:
@@ -2527,7 +2527,7 @@ def fix_item_ignore_transform(path_3mf, vertices_centered, center_xy=True, x0=No
         Coordonnées XY de centrage (plateau/2).
         Utilisées uniquement si center_xy=True.
     """
-
+    if DEBUGPIPE: print('Début fix_item_ignore_transform')
     # --- Lire tout le ZIP ---
     with zipfile.ZipFile(path_3mf, 'r') as zin:
         contents = {info.filename: zin.read(info.filename) for info in zin.infolist()}
@@ -2628,10 +2628,7 @@ def extract_transforms_from_3mf(path_3mf: str) -> Transforms3MF:
     Stocke None si un transform est absent.
     """
     tr = Transforms3MF()
-
-    if DEBUG:
-        print("=== extract_transforms_from_3mf() ===")
-        print(" path_3mf =", path_3mf)
+    if DEBUGPIPE: print('Début extract_transforms_from_3mf')
 
 
     with zipfile.ZipFile(path_3mf, 'r') as z:
@@ -2709,7 +2706,7 @@ def launch_slicer_if_needed(slicer_path, launch_slicer, fc_3mf):
 
     Ne retourne rien.
     """
-    if DEBUG: print('Lancement du slicer', os.path.basename(slicer_path))
+    if DEBUGPIPE: print('Lancement du slicer', os.path.basename(slicer_path))
     # Lancement demandé ?
     if launch_slicer and slicer_path and os.path.exists(slicer_path):
         try:
@@ -2908,11 +2905,9 @@ def export_replace_geometry():
         # ------------------------------------------------------------
         # 13) Recentrage / repositionnement
         # ------------------------------------------------------------
-
-
-
         # on réutilise la position lue après injection
         transf = extract_transforms_from_3mf(fc_3mf)
+
 
         apply_saved_transforms_to_3mf(
             fc_3mf,
@@ -2923,7 +2918,17 @@ def export_replace_geometry():
             x0=x03mf,
             y0=y03mf
         )
-
+        """
+        apply_saved_transforms_to_3mf(
+            fc_3mf,
+            transf,
+            vertices_centered,
+            center=True,
+            cancel_rotation=False,
+            x0=x03mf - global_origin_x,
+            y0=y03mf - global_origin_y
+        )
+        """
 
 
     # ------------------------------------------------------------
