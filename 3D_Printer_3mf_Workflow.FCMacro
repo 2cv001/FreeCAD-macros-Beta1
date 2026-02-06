@@ -943,6 +943,9 @@ def apply_saved_transforms_to_3mf(
                                path_3mf: str,
                                mesh_vertices_from_freecad
                                ) -> str:
+        if DEBUGPIPE: print('Début modify_item_transforms')
+        if DEBUGPIPE:
+            print("modify_item_transforms reçoit x0 =", x0, "y0 =", y0)
 
         pattern = r'(<item[^>]*transform=")([^"]+)(")'
         matches = list(re.finditer(pattern, xml))
@@ -961,9 +964,6 @@ def apply_saved_transforms_to_3mf(
                 vals[9] = str(x0)
                 vals[10] = str(y0)
 
-            # ❌ NE PLUS TOUCHER À vals[11] (Tz)
-            # ❌ NE PLUS RECALCULER min_z_rotated
-            # ❌ NE PLUS RECALCULER new_Tz
 
             new_t = " ".join(vals)
             start, end = m.span()
@@ -2908,7 +2908,6 @@ def export_replace_geometry():
         # on réutilise la position lue après injection
         transf = extract_transforms_from_3mf(fc_3mf)
 
-
         apply_saved_transforms_to_3mf(
             fc_3mf,
             transf,
@@ -2947,8 +2946,8 @@ def export_replace_geometry():
             fc_3mf,
             vertices_centered,
             center_xy=True,
-            x0=PLATEAU_X / 2,
-            y0=PLATEAU_Y / 2
+            x0=PLATEAU_X / 2 - global_origin_x,
+            y0=PLATEAU_Y / 2 - global_origin_x
         )
 
     # ------------------------------------------------------------
