@@ -58,7 +58,7 @@ global_origin_x = 0.0
 global_origin_y = 0.0
 global_origin_z = 0.0
 
-MAX_OLD_BACKUPS = 5
+MAX_OLD_BACKUPS = 3
 
 DEBUG = False
 DEBUGPIPE = True
@@ -344,6 +344,7 @@ def load_config():
         "slicer_exe": DEFAULT_SLICER_EXE,
         "linear_deflection": DEFAULT_LINEAR_DEFLECTION,
         "angular_deflection": DEFAULT_ANGULAR_DEFLECTION,
+        "ignore_transform": True,  # valeur par défaut
     }
     config = configparser.ConfigParser()
     if os.path.exists(INI_FILE):
@@ -358,27 +359,26 @@ def load_config():
                 if "angular_deflection_deg" in s:
                     deg = float(s.get("angular_deflection_deg", DEFAULT_ANGULAR_DEGREES))
                     cfg["angular_deflection"] = deg * math.pi / 180.0
+                if "ignore_transform" in s:
+                    cfg["ignore_transform"] = s.getboolean("ignore_transform", True)
         except Exception as e:
             print("⚠️ Erreur lecture ini:", e)
     return cfg
 
-
 # Sauvegarde les paramètres (déflections, chemin slicer) dans le fichier ini
-def save_settings(linear, angular_rad, slicer_path):
+def save_settings(linear, angular_rad, slicer_path, ignore_transform):
     angular_deg = None
     if angular_rad is not None:
         angular_deg = angular_rad * 180.0 / math.pi
 
-    # Création initiale avec commentaires si le fichier n'existe pas
+    # Création initiale si le fichier n'existe pas
     if not os.path.exists(INI_FILE):
         with open(INI_FILE, "w", encoding="utf-8") as f:
             f.write(
                 "[Settings]\n"
-                "# linear_deflection : précision linéaire (float)\n"
-                "# angular_deflection_deg : tolérance angulaire en DEGRÉS (ex: 3.0)\n"
-                "# slicer_exe : chemin vers l'exécutable du slicer\n"
                 f"linear_deflection = {linear}\n"
                 f"angular_deflection_deg = {angular_deg}\n"
+                f"ignore_transform = {str(ignore_transform).lower()}\n"
                 f"slicer_exe = {slicer_path}\n\n"
                 "[extra_commands]\n"
                 "EXTRA_COMMANDS = [\n"
@@ -386,40 +386,83 @@ def save_settings(linear, angular_rad, slicer_path):
             )
         return
 
-    # Mise à jour ciblée de [Settings] si le fichier existe déjà
+    # Mise à jour ciblée si le fichier existe
     with open(INI_FILE, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
     new_lines = []
     in_settings = False
+
+    # Flags pour savoir si les clés existaient
+    found_linear = False
+    found_angular = False
+    found_slicer = False
+    found_ignore = False
+
     for line in lines:
-        if line.strip().startswith("[Settings]"):
+        stripped = line.strip()
+
+        if stripped.startswith("[Settings]"):
             in_settings = True
             new_lines.append(line)
             continue
-        if in_settings and line.strip().startswith("[") and not line.strip().startswith("[Settings]"):
+
+        if in_settings and stripped.startswith("[") and not stripped.startswith("[Settings]"):
             in_settings = False
+
         if in_settings:
-            if line.strip().startswith("linear_deflection") and linear is not None:
+            if stripped.startswith("linear_deflection"):
                 new_lines.append(f"linear_deflection = {linear}\n")
+                found_linear = True
                 continue
-            if line.strip().startswith("angular_deflection_deg") and angular_deg is not None:
+
+            if stripped.startswith("angular_deflection_deg"):
                 new_lines.append(f"angular_deflection_deg = {angular_deg}\n")
+                found_angular = True
                 continue
-            if line.strip().startswith("slicer_exe") and slicer_path is not None:
+
+            if stripped.startswith("slicer_exe"):
                 new_lines.append(f"slicer_exe = {slicer_path}\n")
+                found_slicer = True
                 continue
+
+            if stripped.startswith("ignore_transform"):
+                new_lines.append(f"ignore_transform = {str(ignore_transform).lower()}\n")
+                found_ignore = True
+                continue
+
         new_lines.append(line)
+
+    # Ajout des clés manquantes juste après [Settings]
+    for i, line in enumerate(new_lines):
+        if line.strip().startswith("[Settings]"):
+            insert_index = i + 1
+            break
+
+    if not found_linear:
+        new_lines.insert(insert_index, f"linear_deflection = {linear}\n")
+        insert_index += 1
+
+    if not found_angular:
+        new_lines.insert(insert_index, f"angular_deflection_deg = {angular_deg}\n")
+        insert_index += 1
+
+    if not found_ignore:
+        new_lines.insert(insert_index, f"ignore_transform = {str(ignore_transform).lower()}\n")
+        insert_index += 1
+
+    if not found_slicer:
+        new_lines.insert(insert_index, f"slicer_exe = {slicer_path}\n")
+        insert_index += 1
 
     with open(INI_FILE, "w", encoding="utf-8") as f:
         f.writelines(new_lines)
-
 
 # -------------------------
 # Interface utilisateur
 # -------------------------
 # Affiche une boîte de dialogue pour demander les options d’export à l’utilisateur
-def ask_user_options(current_slicer, current_linear, current_angular):
+def ask_user_options(current_slicer, current_linear, current_angular, ignore_transform_pref):
     """Affiche boîte de dialogue pour options export (positions, params, STL, slicer, deflection)."""
     dialog = QtGui.QDialog()
     dialog.setWindowTitle(tr("options_title"))
@@ -443,7 +486,7 @@ def ask_user_options(current_slicer, current_linear, current_angular):
     chk_ignore_transform = QtGui.QCheckBox(tr("ignore_transform"))
     chk_ignore_transform.setToolTip(tr("hint_ignore_transform"))
 
-    chk_ignore_transform.setChecked(False)
+    chk_ignore_transform.setChecked(ignore_transform_pref)
     layout.addWidget(chk_ignore_transform)
 
     # Ligne combinée : case "Lancer le slicer" + champ chemin
@@ -609,7 +652,6 @@ def ask_user_options(current_slicer, current_linear, current_angular):
     else:
         return (None, None, None, None, None, None, None, None, [])
 
-
 def get_user_options(cfg):
     """
     Affiche la boîte de dialogue utilisateur :
@@ -631,6 +673,7 @@ def get_user_options(cfg):
     slicer_path_pref = cfg.get("slicer_exe", DEFAULT_SLICER_EXE)
     linear_pref = cfg.get("linear_deflection", DEFAULT_LINEAR_DEFLECTION)
     angular_pref = cfg.get("angular_deflection", DEFAULT_ANGULAR_DEFLECTION)
+    ignore_transform_pref = cfg.get("ignore_transform", True)
 
     while True:
         # Appel de la boîte de dialogue utilisateur
@@ -638,7 +681,7 @@ def get_user_options(cfg):
          slicer_path, base3mf_path, launch_slicer,
          linear_value, angular_value, reset_all,
          ignore_transform, extra_cmds) = ask_user_options(
-            slicer_path_pref, linear_pref, angular_pref
+            slicer_path_pref, linear_pref, angular_pref, ignore_transform_pref
         )
 
         # Annulation
@@ -658,7 +701,9 @@ def get_user_options(cfg):
     save_settings(
         linear=linear_value,
         angular_rad=angular_value,
-        slicer_path=slicer_path
+        slicer_path=slicer_path,
+        ignore_transform = ignore_transform
+
     )
 
     return (
@@ -672,7 +717,6 @@ def get_user_options(cfg):
         ignore_transform,
         extra_cmds
     )
-
 
 # -------------------------
 # Rotation des sauvegardes
@@ -749,20 +793,17 @@ def detect_slicer_target_from_path(path):
     # return "slic3r"
     return "qidislicer"
 
-
-
-
 # -------------------------
 # Fonctions de traitement 3MF / mesh
 # -------------------------
 
-############# A PIORI CETTE FONCTION N'EST JAMAIS APPELEE
+
 def build_model_xml(vertices, triangles):
     """
     Construit un XML 3MF minimal pour 3D/3dmodel.model
     sans aucun namespace (version texte brut).
     """
-    if DEBUG: print('début build_model_xml---------------------------------')
+    if DEBUGPIPE: print('début build_model_xml---------------------------------')
     # --- Construction du bloc <vertices> ---
     verts_xml = []
     for (x, y, z) in vertices:
@@ -1036,7 +1077,6 @@ def extract_vertices_and_triangles_from_model_xml(xml_bytes):
     return vertices, triangles
 
 
-
 def extract_vertices_from_model_xml(xml_bytes):
     """
     Extrait la liste des vertices [(x,y,z), ...] depuis un XML 3MF (3D/3dmodel.model).
@@ -1083,8 +1123,6 @@ def compute_translation_to_match_centers(freecad_vertices, vertices_3mf):
     tz = center_qidi[2] - center_fc[2]
 
     return (tx, ty, tz)
-
-
 
 def apply_translation(vertices, translation):
     tx, ty, tz = translation
@@ -1363,6 +1401,7 @@ def export_selection_with_deflection(selection, out_3mf_path,
                                      linear_deflection=DEFAULT_LINEAR_DEFLECTION,
                                      angular_deflection=DEFAULT_ANGULAR_DEFLECTION):
     if DEBUG: print('Export 3mf FreeCAD vers out_3mf_path', os.path.basename(out_3mf_path))
+    print('Exportation du fichier 3mf par Freecad')
     doc = FreeCAD.ActiveDocument
     temp_objs = []
     try:
@@ -1385,6 +1424,7 @@ def export_selection_with_deflection(selection, out_3mf_path,
             except Exception:
                 pass
         doc.recompute()
+    print("Fin d'exportation")
 
 
 def force_zmax_in_transform(model_data, decalz):
@@ -1515,7 +1555,6 @@ def clean_multi_object_style(src_3mf, dst_3mf):
             return None, keep_model
 
         keep_object_id = m.group(1)
-        if DEBUG: print(f"➡️ ID parent conservé : {keep_object_id}")
 
         # SUPPRESSION des <object> excédentaires
         model_txt_before = model_txt
@@ -1526,7 +1565,6 @@ def clean_multi_object_style(src_3mf, dst_3mf):
         )
         if model_txt != model_txt_before:
             if DEBUG: print("🗑️ Objets excédentaires supprimés dans 3dmodel.model")
-
         # SUPPRESSION des <item> excédentaires
         model_txt_before = model_txt
         model_txt = re.sub(
@@ -1918,7 +1956,6 @@ def origin_in_3mf(path_3mf):
 
     # Cas 1 : pas de 3MF
     if not path_3mf or not os.path.exists(path_3mf):
-        print("Cas 1 : pas de fichier 3MF → (0,0,0)")
         return 0.0, 0.0, 0.0
 
     try:
@@ -1932,35 +1969,29 @@ def origin_in_3mf(path_3mf):
                     cfg_name = name
                     break
 
-            print("Fichier config trouvé :", cfg_name)
 
             if cfg_name is None:
-                print("Cas 2 : pas de config → (0,0,0)")
                 return 0.0, 0.0, 0.0
 
             # Lecture brute du fichier config
             text = z.read(cfg_name).decode("utf-8", errors="ignore")
 
-            print("Lecture matrice + offsets…")
 
             # Extraction naïve
             def extract_value(key):
                 prefix = f'key="{key}"'
                 idx = text.find(prefix)
                 if idx == -1:
-                    print(f"Clé '{key}' introuvable")
+
                     return None
                 start = text.find('value="', idx)
                 if start == -1:
-                    print(f"value=\"...\" introuvable pour '{key}'")
                     return None
                 start += len('value="')
                 end = text.find('"', start)
                 if end == -1:
-                    print(f"Fin de valeur introuvable pour '{key}'")
                     return None
                 val = text[start:end]
-                print(f"{key} =", val)
                 return val
 
             # Matrice
@@ -1986,25 +2017,20 @@ def origin_in_3mf(path_3mf):
             oy = float(oy) if oy else 0.0
             oz = float(oz) if oz else 0.0
 
-            print("Offsets lus :", ox, oy, oz)
 
             # Cas 3 : matrice identité ?
             if matrix is None:
-                print("Pas de matrice → identité → (0,0,0)")
                 return 0.0, 0.0, 0.0
 
             ident = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]
             tol = 1e-6
             matrix_is_identity = all(abs(a-b) < tol for a,b in zip(matrix, ident))
 
-            print("matrix_is_identity =", matrix_is_identity)
 
             if matrix_is_identity:
-                print("Cas 3 : matrice identité → (0,0,0)")
                 return 0.0, 0.0, 0.0
 
             # Cas 4 : matrice non-identité
-            print("Cas 4 : matrice non-identité → retourne offsets")
             return ox, oy, oz
 
     except Exception as e:
@@ -2378,7 +2404,6 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
                     continue
 
                 # 2) Transform global dans 3dmodel.model
-                # if DEBUG: print("DEBUG FILENAME:", repr(name))
 
                 if name.endswith("3dmodel.model"):
 
@@ -2445,159 +2470,74 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
 
 
 
-def fix_item_ignore_transform(path_3mf, vertices_centered, center_xy=True, x0=None, y0=None):
-    if DEBUGPIPE: print("Debut fix_item_ignore_transform")
+def fix_item_ignore_transform(path_3mf, vertices_centered, center_xy=True, x0=None, y0=None, keep_rotation=True):
+    """
+    Corrige le transform du <item> dans le 3MF final.
+
+    - keep_rotation=False  → rotation annulée (matrice identité)
+    - keep_rotation=True   → rotation conservée
+    """
+
+    if DEBUGPIPE:
+        print('Début fix_item_ignore_transform')
 
     # --- Lire tout le ZIP ---
     with zipfile.ZipFile(path_3mf, 'r') as zin:
         contents = {info.filename: zin.read(info.filename) for info in zin.infolist()}
 
     if "3D/3dmodel.model" not in contents:
-        if DEBUG: print("⚠️ 3D/3dmodel.model introuvable")
         return
 
     xml = contents["3D/3dmodel.model"].decode("utf-8", errors="ignore")
 
-    # --- Trouver tous les <item> ---
-    items = re.findall(r'<item[^>]*transform="([^"]+)"', xml)
-    if not items:
-        if DEBUG: print("⚠️ Aucun <item> trouvé")
-        return
-
-    # --- Calcul du transform global ---
-    min_z = min(v[2] for v in vertices_centered)
-    z = -min_z
-
-    if center_xy:
-        x = x0
-        y = y0
-    else:
-        # on garde le XY du premier item
-        first_vals = items[0].split()
-        x = float(first_vals[9])
-        y = float(first_vals[10])
-
-    new_transform = " ".join([
-        "1","0","0",
-        "0","1","0",
-        "0","0","1",
-        str(x), str(y), str(z)
-    ])
-
-    # --- Remplacer TOUS les transforms des <item> ---
-    xml_new = re.sub(
-        r'(<item[^>]*transform=")[^"]+(")',
-        lambda m: m.group(1) + new_transform + m.group(2),
-        xml
-    )
-
-    # --- Réécrire un ZIP propre ---
-    with zipfile.ZipFile(path_3mf, 'w') as zout:
-        for name, data in contents.items():
-            if name == "3D/3dmodel.model":
-                zout.writestr(name, xml_new)
-            else:
-                zout.writestr(name, data)
-
-
-
-
-def fix_item_ignore_transform(path_3mf, vertices_centered, center_xy=True, x0=None, y0=None):
-    """
-    Corrige le transform du <item> dans le 3MF final en annulant la rotation,
-    en centrant en XY (optionnel) et en posant l'objet sur le plateau (Z).
-
-    PARAMÈTRES
-    ----------
-    path_3mf : str
-        Chemin du fichier 3MF final généré par la macro.
-
-    vertices_centered : list[(x,y,z)] ou None
-        - Si une liste de vertices est fournie (cas Qidi avec injection),
-          la fonction utilise ces vertices directement (plus rapide).
-        - Si None est fourni (cas Cura, FreeCAD pur, injection impossible),
-          la fonction lit les vertices directement dans 3D/3dmodel.model
-          du 3MF final (mode fallback universel).
-
-    center_xy : bool
-        Si True → centre l'objet en XY sur le plateau.
-        Si False → conserve le XY existant dans le <item>.
-
-    x0, y0 : float
-        Coordonnées XY de centrage (plateau/2).
-        Utilisées uniquement si center_xy=True.
-    """
-    if DEBUGPIPE: print('Début fix_item_ignore_transform')
-    # --- Lire tout le ZIP ---
-    with zipfile.ZipFile(path_3mf, 'r') as zin:
-        contents = {info.filename: zin.read(info.filename) for info in zin.infolist()}
-
-    if "3D/3dmodel.model" not in contents:
-        print("⚠️ 3D/3dmodel.model introuvable → abandon")
-        return
-
-    xml = contents["3D/3dmodel.model"].decode("utf-8", errors="ignore")
-
-    # ============================================================
-    # 1) MODE ACTUEL (si vertices_centered est fourni)
-    # ============================================================
+    # --- Récupération des vertices ---
     if vertices_centered:
         vertices = vertices_centered
-
     else:
-        # ============================================================
-        # 2) MODE UNIVERSAL FALLBACK (si vertices_centered est None)
-        # ============================================================
-
-
         verts = re.findall(
             r'<vertex[^>]*x="([^"]+)"[^>]*y="([^"]+)"[^>]*z="([^"]+)"',
             xml
         )
-
         if not verts:
             print("⚠️ Aucun vertex trouvé → abandon")
             return
-
         vertices = [(float(x), float(y), float(z)) for x, y, z in verts]
 
-    # --- Bounding box global ---
     xs = [v[0] for v in vertices]
     ys = [v[1] for v in vertices]
     zs = [v[2] for v in vertices]
 
     min_z = min(zs)
 
+    # --- Lire transform existant ---
+    m = re.search(r'<item[^>]*transform="([^"]+)"', xml)
+    if m:
+        old_vals = m.group(1).split()
+    else:
+        old_vals = ["1","0","0","0","1","0","0","0","1","0","0","0"]
+
     # --- XY ---
     if center_xy:
         x = x0
         y = y0
     else:
-        # garder XY du premier item
-        m = re.search(r'<item[^>]*transform="([^"]+)"', xml)
-        if m:
-            vals = m.group(1).split()
-            if len(vals) == 12:
-                x = float(vals[9])
-                y = float(vals[10])
-            else:
-                x = 0
-                y = 0
-        else:
-            x = 0
-            y = 0
+        x = float(old_vals[9])
+        y = float(old_vals[10])
 
-    # --- Z de pose ---
+    # --- Z recalculé ---
     z = -min_z
 
-    new_transform = " ".join([
-        "1","0","0",
-        "0","1","0",
-        "0","0","1",
-        str(x), str(y), str(z)
-    ])
+    # --- Rotation ---
+    if keep_rotation:
+        # garder les 9 premiers coefficients
+        r = old_vals[:9]
+    else:
+        # matrice identité
+        r = ["1","0","0","0","1","0","0","0","1"]
 
-    # --- Remplacer tous les <item> ---
+    new_transform = " ".join(r + [str(x), str(y), str(z)])
+
+    # --- Remplacer dans le XML ---
     xml_new = re.sub(
         r'(<item[^>]*transform=")[^"]+(")',
         lambda m: m.group(1) + new_transform + m.group(2),
@@ -2611,9 +2551,6 @@ def fix_item_ignore_transform(path_3mf, vertices_centered, center_xy=True, x0=No
                 zout.writestr(name, xml_new)
             else:
                 zout.writestr(name, data)
-
-
-
 
 
 
@@ -2861,7 +2798,7 @@ def export_replace_geometry():
 
     # Récupération des coordonnées, dans le globaln de l'origine
     global_origin_x, global_origin_y, global_origin_z = origin_in_3mf(fc_3mf)
-    print('coordonnées globales', global_origin_x, global_origin_y, global_origin_z, "===============================================================================================")
+
 
     # ------------------------------------------------------------
     # 9) Export FreeCAD → 3MF (dans fc_3mf, comme avant)
@@ -2941,14 +2878,27 @@ def export_replace_geometry():
     # ------------------------------------------------------------
     # Modifications item transform si ignore_transform
     # ------------------------------------------------------------
-    if ignore_transform or slicer_source != slicer_target:
+
+    # Centrer si demandé
+    if ignore_transform:
+        # Centrage XY + recalcul Z
         fix_item_ignore_transform(
             fc_3mf,
             vertices_centered,
             center_xy=True,
             x0=PLATEAU_X / 2 - global_origin_x,
-            y0=PLATEAU_Y / 2 - global_origin_x
+            y0=PLATEAU_Y / 2 - global_origin_y,
+            keep_rotation=False
         )
+
+    else:
+        # Recalcul Z uniquement (pas de centrage XY)
+        fix_item_ignore_transform(
+            fc_3mf,
+            vertices_centered,
+            center_xy=False
+        )
+
 
     # ------------------------------------------------------------
     # 14) Lancement du slicer
