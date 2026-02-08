@@ -2714,11 +2714,21 @@ def fix_item_ignore_transform(path_3mf, vertices_centered, transform_item,
     new_transform = " ".join(r + [str(x), str(y), str(z)])
 
     # --- Remplacer dans le XML ---
-    xml_new = re.sub(
-        r'(<item[^>]*transform=")[^"]+(")',
-        lambda m: m.group(1) + new_transform + m.group(2),
-        xml
-    )
+
+    if 'transform="' in xml:
+        # Remplacement normal
+        xml_new = re.sub(
+            r'(<item[^>]*transform=")[^"]+(")',
+            lambda m: m.group(1) + new_transform + m.group(2),
+            xml
+        )
+    else:
+        # Aucun transform → on l’ajoute
+        xml_new = re.sub(
+            r'(<item[^>]*)(/?>)',
+            lambda m: f'{m.group(1)} transform="{new_transform}"{m.group(2)}',
+            xml
+        )
 
     # --- Réécrire le ZIP ---
     with zipfile.ZipFile(path_3mf, 'w') as zout:
@@ -3025,22 +3035,12 @@ def export_replace_geometry():
             fc_3mf,
             transf,
             vertices_centered,
-            center=True,
+            center=False, #############True modifié le 2025/02/08 14:28 ###############################################################
             cancel_rotation=False,
             x0=x03mf,
             y0=y03mf
         )
-        """
-        apply_saved_transforms_to_3mf(
-            fc_3mf,
-            transf,
-            vertices_centered,
-            center=True,
-            cancel_rotation=False,
-            x0=x03mf - global_origin_x,
-            y0=y03mf - global_origin_y
-        )
-        """
+
 
 
     # ------------------------------------------------------------
@@ -3067,7 +3067,8 @@ def export_replace_geometry():
     if DEBUG: print('global_origin_x = ',global_origin_x)
 
     # Centrer si demandé
-    if ignore_transform:
+    if ignore_transform or transform_item is None:
+        print('cas ignore_transform or transform_item is None')
         # Centrage XY + recalcul Z
         fix_item_ignore_transform(
             fc_3mf,
