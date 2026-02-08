@@ -60,7 +60,7 @@ global_origin_z = 0.0
 
 MAX_OLD_BACKUPS = 3
 
-DEBUG = False
+DEBUG = True
 DEBUGPIPE = True
 
 if platform.system() == "Windows":
@@ -2470,7 +2470,7 @@ def inject_geometry_if_possible(base_name, fc_3mf, old_3mf_backup, fc_3mf_existe
 
 
 
-def fix_item_ignore_transform(path_3mf, vertices_centered, center_xy=True, x0=None, y0=None, keep_rotation=True):
+def OOOOOOOOOOOOOOOOOOOOOOLLLLLLLLLLLLLLDDDDDDDDDDDDDDDfix_item_ignore_transform(path_3mf, vertices_centered, center_xy=True, x0=None, y0=None, keep_rotation=True):
     """
     Corrige le transform du <item> dans le 3MF final.
 
@@ -2533,6 +2533,182 @@ def fix_item_ignore_transform(path_3mf, vertices_centered, center_xy=True, x0=No
         r = old_vals[:9]
     else:
         # matrice identité
+        r = ["1","0","0","0","1","0","0","0","1"]
+
+    new_transform = " ".join(r + [str(x), str(y), str(z)])
+
+    # --- Remplacer dans le XML ---
+    xml_new = re.sub(
+        r'(<item[^>]*transform=")[^"]+(")',
+        lambda m: m.group(1) + new_transform + m.group(2),
+        xml
+    )
+
+    # --- Réécrire le ZIP ---
+    with zipfile.ZipFile(path_3mf, 'w') as zout:
+        for name, data in contents.items():
+            if name == "3D/3dmodel.model":
+                zout.writestr(name, xml_new)
+            else:
+                zout.writestr(name, data)
+
+def OOOOOOOOOOOOOOOOOOOOOOOOOfix_item_ignore_transform(path_3mf, vertices_centered, transform_item,
+                              center_xy=True, x0=None, y0=None, keep_rotation=True):
+    """
+    Corrige le transform du <item> dans le 3MF final.
+
+    - keep_rotation=False  → rotation annulée (matrice identité)
+    - keep_rotation=True   → rotation conservée
+    """
+
+    if DEBUGPIPE:
+        print('Début fix_item_ignore_transform')
+
+    # --- Lire tout le ZIP ---
+    with zipfile.ZipFile(path_3mf, 'r') as zin:
+        contents = {info.filename: zin.read(info.filename) for info in zin.infolist()}
+
+    if "3D/3dmodel.model" not in contents:
+        return
+
+    xml = contents["3D/3dmodel.model"].decode("utf-8", errors="ignore")
+
+    # --- Récupération des vertices ---
+    if vertices_centered:
+        vertices = vertices_centered
+    else:
+        verts = re.findall(
+            r'<vertex[^>]*x="([^"]+)"[^>]*y="([^"]+)"[^>]*z="([^"]+)"',
+            xml
+        )
+        if not verts:
+            print("⚠️ Aucun vertex trouvé → abandon")
+            return
+        vertices = [(float(x), float(y), float(z)) for x, y, z in verts]
+
+    # --- Appliquer la rotation du 3MF aux vertices ---
+    R = transform_item.R
+    rotated_z = []
+
+    for (x, y, z) in vertices:
+        zr = R[2][0]*x + R[2][1]*y + R[2][2]*z
+        rotated_z.append(zr)
+
+    min_z = min(rotated_z)
+
+    # --- Lire transform existant ---
+    m = re.search(r'<item[^>]*transform="([^"]+)"', xml)
+    if m:
+        old_vals = m.group(1).split()
+    else:
+        old_vals = ["1","0","0","0","1","0","0","0","1","0","0","0"]
+
+    # --- XY ---
+    if center_xy:
+        x = x0
+        y = y0
+    else:
+        x = float(old_vals[9])
+        y = float(old_vals[10])
+
+    # --- Z recalculé (objet posé sur le plateau) ---
+    z = -min_z
+
+    # --- Rotation ---
+    if keep_rotation:
+        r = old_vals[:9]
+    else:
+        r = ["1","0","0","0","1","0","0","0","1"]
+
+    new_transform = " ".join(r + [str(x), str(y), str(z)])
+
+    # --- Remplacer dans le XML ---
+    xml_new = re.sub(
+        r'(<item[^>]*transform=")[^"]+(")',
+        lambda m: m.group(1) + new_transform + m.group(2),
+        xml
+    )
+
+    # --- Réécrire le ZIP ---
+    with zipfile.ZipFile(path_3mf, 'w') as zout:
+        for name, data in contents.items():
+            if name == "3D/3dmodel.model":
+                zout.writestr(name, xml_new)
+            else:
+                zout.writestr(name, data)
+
+
+def fix_item_ignore_transform(path_3mf, vertices_centered, transform_item,
+                              center_xy=True, x0=None, y0=None, keep_rotation=True):
+    """
+    Corrige le transform du <item> dans le 3MF final.
+
+    - keep_rotation=False  → rotation annulée (matrice identité)
+    - keep_rotation=True   → rotation conservée
+    """
+
+    if DEBUGPIPE:
+        print('Début fix_item_ignore_transform')
+
+    # --- Lire tout le ZIP ---
+    with zipfile.ZipFile(path_3mf, 'r') as zin:
+        contents = {info.filename: zin.read(info.filename) for info in zin.infolist()}
+
+    if "3D/3dmodel.model" not in contents:
+        return
+
+    xml = contents["3D/3dmodel.model"].decode("utf-8", errors="ignore")
+
+    # --- Récupération des vertices ---
+    if vertices_centered:
+        vertices = vertices_centered
+    else:
+        verts = re.findall(
+            r'<vertex[^>]*x="([^"]+)"[^>]*y="([^"]+)"[^>]*z="([^"]+)"',
+            xml
+        )
+        if not verts:
+            print("⚠️ Aucun vertex trouvé → abandon")
+            return
+        vertices = [(float(x), float(y), float(z)) for x, y, z in verts]
+
+    # --- Appliquer la rotation du 3MF aux vertices ---
+    if not transform_item:
+        # Pas de rotation → cas FreeCAD ou 3MF sans transform
+        rotated_z = [z for (_, _, z) in vertices]
+    else:
+        # Rotation réelle du 3MF
+        R = transform_item.R
+        rotated_z = []
+        for (x, y, z) in vertices:
+            zr = R[2][0]*x + R[2][1]*y + R[2][2]*z
+            rotated_z.append(zr)
+
+    # --- min_z basé sur la rotation (ou pas) ---
+    min_z = min(rotated_z)
+
+    # --- Lire transform existant ---
+    m = re.search(r'<item[^>]*transform="([^"]+)"', xml)
+    if m:
+        old_vals = m.group(1).split()
+    else:
+        old_vals = ["1","0","0","0","1","0","0","0","1","0","0","0"]
+
+    # --- XY ---
+    if center_xy:
+        x = x0
+        y = y0
+    else:
+        x = float(old_vals[9])
+        y = float(old_vals[10])
+
+    # --- Z recalculé (objet posé sur le plateau) ---
+    z = -min_z
+
+    # --- Rotation ---
+    if keep_rotation:
+        r = old_vals[:9]
+    else:
         r = ["1","0","0","0","1","0","0","0","1"]
 
     new_transform = " ".join(r + [str(x), str(y), str(z)])
@@ -2879,12 +3055,24 @@ def export_replace_geometry():
     # Modifications item transform si ignore_transform
     # ------------------------------------------------------------
 
+    # --- Déterminer transform_item proprement ---
+    try:
+        # Cas normal : transform extrait
+        transform_item = transf.items[0]
+    except Exception:
+        # Cas FreeCAD ou injection impossible : pas de transform
+        transform_item = None
+
+
+    if DEBUG: print('global_origin_x = ',global_origin_x)
+
     # Centrer si demandé
     if ignore_transform:
         # Centrage XY + recalcul Z
         fix_item_ignore_transform(
             fc_3mf,
             vertices_centered,
+            transform_item=transform_item,
             center_xy=True,
             x0=PLATEAU_X / 2 - global_origin_x,
             y0=PLATEAU_Y / 2 - global_origin_y,
@@ -2896,6 +3084,7 @@ def export_replace_geometry():
         fix_item_ignore_transform(
             fc_3mf,
             vertices_centered,
+            transform_item=transform_item,
             center_xy=False
         )
 
@@ -2977,5 +3166,4 @@ if False:
 
     # Lancer l’analyse
     _debug_find_unused_functions(__file__)
-
 
