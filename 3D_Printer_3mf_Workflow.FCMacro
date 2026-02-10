@@ -2853,21 +2853,34 @@ def launch_slicer_if_needed(slicer_path, launch_slicer, fc_3mf):
         show_message(tr("info_title"), tr("info_done"))
 
 
-def run_extra_commands(extra_cmds):
+def run_extra_commands(extra_cmds, project_path):
     """
     Exécute les commandes externes définies par l’utilisateur.
-    Chaque entrée est un tuple : (checked, cmd, delay)
-
-    - checked : bool → exécuter ou non
-    - cmd : commande système
-    - delay : délai en secondes avant exécution
-
-    Ne retourne rien.
+    project_path = chemin complet du projet FreeCAD, AVEC extension (.FCStd)
     """
-    if DEBUG: print('Lancement commandes utilisateur')
+
+    if DEBUG:
+        print('Lancement commandes utilisateur')
+
+    # On enlève l’extension pour obtenir la base
+    project_basepath = os.path.splitext(project_path)[0]
+    # Dossier du projet
+    project_dir = os.path.dirname(project_basepath)
+    # Nom du projet sans extension
+    project_name = os.path.basename(project_basepath)
+
     for checked, cmd, delay in extra_cmds:
         if not checked:
             continue
+
+        # Substitution minimale
+        # cmd est une LISTE → on remplace dans chaque élément
+        cmd = [
+            part.replace("%PROJECT%", project_basepath)
+                .replace("%PROJECTDIR%", project_dir)
+                .replace("%PROJECTNAME%", project_name)
+            for part in cmd
+        ]
 
         try:
             if delay > 0:
@@ -3114,7 +3127,9 @@ def export_replace_geometry():
     # ------------------------------------------------------------
     # 15) Commandes externes
     # ------------------------------------------------------------
-    run_extra_commands(extra_cmds)
+    doc = FreeCAD.ActiveDocument
+    project_path = doc.FileName
+    run_extra_commands(extra_cmds, project_path)
 
 
 export_replace_geometry()
