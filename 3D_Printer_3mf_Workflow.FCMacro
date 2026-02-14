@@ -30,6 +30,8 @@ from PySide import QtGui, QtCore
 from typing import Dict, Optional
 import gc
 import tempfile
+import urllib.request
+
 
 
 # -------------------------
@@ -400,25 +402,25 @@ def run_macro_if_exists(filename, download_url, raw_url):
         return True
 
     # --- 3) Sinon → fenêtre Qt personnalisée ---
-    dialog = QtWidgets.QDialog()
-    dialog.setWindowTitle(tr["dependency_missing_title"])
+    dialog = QtGui.QDialog()
+    dialog.setWindowTitle(tr("dependency_missing_title"))
     dialog.setMinimumWidth(520)
 
-    layout = QtWidgets.QVBoxLayout(dialog)
+    layout = QtGui.QVBoxLayout(dialog)
 
     folder_url = "file:///" + current_dir.replace("\\", "/")
 
     html = f"""
-    <p>{tr['dependency_missing_msg'].format(filename=filename)}</p>
+    <p>{tr('dependency_missing_msg').format(filename=filename)}</p>
 
-    <p>{tr['dependency_download']}<br>
+    <p>{tr('dependency_download')}<br>
     <a href="{download_url}">{download_url}</a></p>
 
-    <p>{tr['dependency_copy_to']}<br>
+    <p>{tr('dependency_copy_to')}<br>
     <a href="{folder_url}">{current_dir}</a></p><br>
     """
 
-    label = QtWidgets.QLabel()
+    label = QtGui.QLabel()
     label.setTextFormat(QtCore.Qt.RichText)
     label.setTextInteractionFlags(QtCore.Qt.TextBrowserInteraction)
     label.setOpenExternalLinks(False)
@@ -427,11 +429,11 @@ def run_macro_if_exists(filename, download_url, raw_url):
     layout.addWidget(label)
 
     # --- Bouton Télécharger automatiquement ---
-    btn_download = QtWidgets.QPushButton(tr["dependency_auto_download"])
+    btn_download = QtGui.QPushButton(tr("dependency_auto_download"))
     layout.addWidget(btn_download)
 
     # --- Bouton OK ---
-    btn_ok = QtWidgets.QPushButton(tr["dependency_ok"])
+    btn_ok = QtGui.QPushButton(tr("dependency_ok"))
     btn_ok.clicked.connect(dialog.accept)
     layout.addWidget(btn_ok)
 
@@ -464,20 +466,20 @@ def run_macro_if_exists(filename, download_url, raw_url):
         try:
             urllib.request.urlretrieve(raw_url, dest)
 
-            QtWidgets.QMessageBox.information(
+            QtGui.QMessageBox.information(
                 dialog,
-                tr["info_title"],
-                f"{tr['dependency_download_success']}\n{dest}\n\n→ {tr['dependency_auto_download']}"
+                tr("info_title"),
+                f"{tr('dependency_download_success')}\n{dest}\n\n→ {tr('dependency_auto_download')}"
             )
 
             dialog.accept()
             execute_macro(dest)
 
         except Exception as e:
-            QtWidgets.QMessageBox.warning(
+            QtGui.QMessageBox.warning(
                 dialog,
-                tr["error_title"],
-                f"{tr['dependency_download_error']}\n{e}"
+                tr("error_title"),
+                f"{tr('dependency_download_error')}\n{e}"
             )
 
     btn_download.clicked.connect(auto_download)
