@@ -51,7 +51,8 @@ TRANSLATIONS = {
         "mode_cross": "Références croisées complètes",
 
         # Boutons
-        "btn_expand": "Déplier",
+        "btn_expand": "Déplier / Replier",
+        "btn_collapse": "Replier / Déplier",
         "btn_refresh_tt": "Mettre à jour",
 
         # Cases à cocher
@@ -63,7 +64,6 @@ TRANSLATIONS = {
         "used_by": "Est utilisé par",
         "content_of": "Contenu de",
         "expression_of": "Expression de",
-
 
         # Enrichissement
         "expression": "expression",
@@ -80,9 +80,10 @@ TRANSLATIONS = {
         "mode_cross": "Full cross‑references",
 
         # Boutons
-        "btn_expand": "Expand",
+        "btn_expand": "Expand / Collapse",
+        "btn_collapse": "Collapse / Expand",
         "btn_refresh_tt": "Refresh",
-
+        
         # Cases à cocher
         "show_formula": "Show formula in line",
         "show_value": "Show value in line",
@@ -297,9 +298,6 @@ def traiter_feuille(sheet, graph, label_to_name, alias_map):
 
                 graph[cell_ref]["parents"].add(norm)
                 graph[norm]["children"].add(cell_ref)
-
-
-
 
 def traiter_objet(obj, graph, label_to_name, alias_map):
 
@@ -540,7 +538,7 @@ class RefDialog2(QtGui.QDialog):
         self.btn_refresh.setIcon(icon)
         right_box.addWidget(self.btn_refresh)
 
-        self.btn_expand = QtGui.QPushButton("Tout déplier")
+        self.btn_expand = QtGui.QPushButton(tr("btn_expand"))
         self.btn_expand.setMaximumWidth(120)
         right_box.addWidget(self.btn_expand)
         self.expanded = False
@@ -618,6 +616,10 @@ class RefDialog2(QtGui.QDialog):
             prop = node["property"]  # ex: "Length"
             obj_label = node.get("label")
 
+            # Fallback : si label vide, utiliser le Name de l'objet
+            if not obj_label:
+                obj_label = node.get("object")  # ex: "Sketch"
+
             # Construire Pad(LabelPad).Length
             if obj_label:
                 base = f"{obj}({obj_label}).{prop}"
@@ -636,7 +638,7 @@ class RefDialog2(QtGui.QDialog):
         if self.show_value.isChecked() and node.get("value") is not None:
             base += f" — {tr('value')}: {node['value']}"
 
-        # --- 7) 🔥 Ajouter type de contrainte si présent ---
+        # --- 7)  Ajouter type de contrainte si présent ---
         ctype = node.get("constraint_type")
         if ctype:
             base += f" — {tr('type')}: {ctype}"
@@ -823,8 +825,10 @@ class RefDialog2(QtGui.QDialog):
                 rec(item.child(i))
         for i in range(self.tree.topLevelItemCount()):
             rec(self.tree.topLevelItem(i))
-        self.btn_expand.setText("Tout replier" if self.expanded else "Tout déplier")
 
+        self.btn_expand.setText(
+            tr("btn_collapse") if self.expanded else tr("btn_expand")
+        )
 
 
 # ------------------------------------------------------------
