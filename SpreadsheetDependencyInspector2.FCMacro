@@ -251,26 +251,17 @@ def traiter_feuille(sheet, graph, label_to_name, alias_map):
         graph[cell_ref]["formula"] = content
         graph[cell_ref]["alias"] = alias
         graph[cell_ref]["label"] = alias if alias else addr
-
-        try:
-            graph[cell_ref]["value"] = sheet.getContents(addr)
-        except:
-            graph[cell_ref]["value"] = None
+        graph[cell_ref]["value"] = sheet.get(addr)
 
         if content.startswith("#"):
             graph[cell_ref]["errors"].add(content)
 
         # --- DÉPENDANCES ---
         if content.startswith("="):
-
-            #  1) alias_map doit être passé ici
             raw_refs = extract_raw_refs_for_graph(content, sheet.Name, alias_map)
 
             for raw in raw_refs:
-
-                #  2) alias_map doit être passé ici aussi
                 norm = normalize_ref(raw, sheet.Name, label_to_name, alias_map)
-
                 if not norm:
                     continue
 
@@ -278,6 +269,7 @@ def traiter_feuille(sheet, graph, label_to_name, alias_map):
 
                 graph[cell_ref]["parents"].add(norm)
                 graph[norm]["children"].add(cell_ref)
+
 
 def traiter_objet(obj, graph, label_to_name, alias_map):
 
@@ -327,11 +319,8 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
 
         for p in parents_bruts:
 
-            #  2) alias_map doit être passé ici aussi
             p_norm = normalize_ref(p, None, label_to_name, alias_map)
-
             ajouter_noeud_si_absent(graph, p_norm)
-
             graph[ref_obj]["parents"].add(p_norm)
             graph[p_norm]["children"].add(ref_obj)
 
@@ -389,7 +378,7 @@ def normalize_ref(ref, current_sheet_name, label_to_name, alias_map):
     if "." in ref:
         return ref
 
-    # 3) 🔥 Alias locaux (Longueur → datas.D3)
+    # 3) Alias locaux (Longueur → datas.D3)
     if current_sheet_name in alias_map:
         sheet_aliases = alias_map[current_sheet_name]
         if ref in sheet_aliases:
@@ -410,6 +399,9 @@ def explore_graph(ref, graph, allow_parents=True, allow_children=True, visited=N
     Explore récursivement le graphe à partir de ref.
     Retourne un ensemble de nœuds atteignables selon les directions autorisées.
     """
+    if isinstance(ref, tuple):
+
+        ref = ref[0]
     if visited is None:
         visited = set()
 
@@ -527,6 +519,7 @@ class RefDialog2(QtGui.QDialog):
         if self.show_value.isChecked():
             if node["value"] is not None:
                 label += f" — valeur: {node['value']}"
+        print("ENRICH", ref, "value=", node["value"], "formula=", node["formula"])
 
         return label
 
@@ -646,12 +639,11 @@ class RefDialog2(QtGui.QDialog):
     # BUILD TREE
     # --------------------------------------------------------
     def build_tree(self, root):
-        root_item = QtGui.QTreeWidgetItem(self.tree, [self.enrich_label(root, self.graph[root])])
+        root_item = QtGui.QTreeWidgetItem(
+            self.tree,
+            [self.enrich_label(root, self.graph[root])]
+        )
         root_item.setExpanded(True)
-
-        # Sens correct :
-        # IN  = ce que la cellule utilise → allow_parents=True
-        # OUT = ce qui utilise la cellule → allow_children=True
 
         allow_parents = self.mode_out.isChecked() or self.mode_cross.isChecked()
         allow_children = self.mode_in.isChecked() or self.mode_cross.isChecked()
@@ -663,15 +655,18 @@ class RefDialog2(QtGui.QDialog):
             in_item = QtGui.QTreeWidgetItem(root_item, ["Utilise :"])
             for p in sorted(self.graph[root]["parents"]):
                 if p in reachable:
-                    QtGui.QTreeWidgetItem(in_item, [self.enrich_label(p, self.graph[p])])
+                    node = self.graph[p]
+                    item = QtGui.QTreeWidgetItem(in_item, [self.enrich_label(p, node)])
+                    item.setToolTip(0, f"Formule : {node['formula']}\nValeur : {node['value']}")
 
         # OUT section
         if allow_children:
             out_item = QtGui.QTreeWidgetItem(root_item, ["Utilisé par :"])
             for c in sorted(self.graph[root]["children"]):
                 if c in reachable:
-                    QtGui.QTreeWidgetItem(out_item, [self.enrich_label(c, self.graph[c])])
-
+                    node = self.graph[c]
+                    item = QtGui.QTreeWidgetItem(out_item, [self.enrich_label(c, node)])
+                    item.setToolTip(0, f"Formule : {node['formula']}\nValeur : {node['value']}")
 
     # --------------------------------------------------------
     # EXPAND / COLLAPSE
@@ -710,7 +705,19 @@ else:
 print("RESULTAT FINAL")
 print("=== CELLULES ===")
 g = build_graph() # uniquement pour les prints. A retirer si on retire les prints
+print("=== DEBUG KEYS ===")
+for k in g.keys():
+    print("KEY:", k, "TYPE:", type(k))
+print("=== DEBUG CHILDREN TYPES ===")
+for k, node in g.items():
+    for c in node["children"]:
+        print("CHILD OF", k, "=", c, "TYPE:", type(c))
+print("=== DEBUG PARENTS TYPES ===")
+for k, node in g.items():
+    for p in node["parents"]:
+        print("PARENT OF", k, "=", p, "TYPE:", type(p))
 
+"""
 for ref, node in g.items():
     if node["kind"] == "cell":
         print(
@@ -740,6 +747,8 @@ for ref, node in g.items():
 print("=== TEST explore_graph ===")
 # ref = "datas.D5"   # par exemple
 ref=Gui.ActiveDocument.ActiveView.getSheet().Label + '.' + Gui.activeView().currentIndex()
+if isinstance(ref, tuple):
+    ref = ref[0]
 
 nodes_out = explore_graph(ref, g, allow_parents=False, allow_children=True)
 nodes_in  = explore_graph(ref, g, allow_parents=True,  allow_children=False)
@@ -748,4 +757,5 @@ nodes_cross = explore_graph(ref, g, allow_parents=True, allow_children=True)
 print("OUT :", nodes_out)
 print("IN  :", nodes_in)
 print("CROSS :", nodes_cross)
+"""
 
