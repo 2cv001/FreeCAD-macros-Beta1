@@ -180,7 +180,15 @@ def extract_raw_refs_for_graph(formula, sheet_name, alias_map):
 
     return refs
 
-def ajouter_noeud_si_absent(graph, ref, kind=None, obj_name=None, prop_name=None, sheet_name=None, cell_name=None):
+def ajouter_noeud_si_absent(
+    graph,
+    ref,
+    kind=None,
+    obj_name=None,
+    prop_name=None,
+    sheet_name=None,
+    cell_name=None,
+):
     if ref not in graph:
         graph[ref] = {
             "ref": ref,
@@ -191,13 +199,31 @@ def ajouter_noeud_si_absent(graph, ref, kind=None, obj_name=None, prop_name=None
             "cell": cell_name,
             "value": None,
             "formula": None,
-            "alias": None,   # pour les cellules
-            "label": None,   # label générique (objet ou cellule)
+            "alias": None,
+            "label": None,
             "constraint_type": None,
             "errors": set(),
             "parents": set(),
             "children": set(),
         }
+    else:
+        # 🔥 Mise à jour du kind si on découvre plus tard que c’est une cellule
+        if kind is not None and graph[ref]["kind"] != kind:
+            graph[ref]["kind"] = kind
+
+        # 🔥 Mise à jour des infos de cellule
+        if sheet_name is not None:
+            graph[ref]["sheet"] = sheet_name
+        if cell_name is not None:
+            graph[ref]["cell"] = cell_name
+
+        # 🔥 Mise à jour des infos d'objet FreeCAD
+        if obj_name is not None:
+            graph[ref]["object"] = obj_name
+        if prop_name is not None:
+            graph[ref]["property"] = prop_name
+
+
 
 def construire_label_to_name():
     d = {}
@@ -245,9 +271,15 @@ def traiter_feuille(sheet, graph, label_to_name, alias_map):
 
         # --- MÉTADONNÉES ---
         graph[cell_ref]["formula"] = content
-        graph[cell_ref]["alias"] = alias
-        graph[cell_ref]["label"] = alias if alias else addr
+
+        if graph[cell_ref]["alias"] is None:
+            graph[cell_ref]["alias"] = alias
+
+        if graph[cell_ref]["label"] is None or graph[cell_ref]["label"] == graph[cell_ref]["cell"]:
+            graph[cell_ref]["label"] = alias if alias else addr
+
         graph[cell_ref]["value"] = sheet.get(addr)
+
 
         if content.startswith("#"):
             graph[cell_ref]["errors"].add(content)
@@ -265,6 +297,8 @@ def traiter_feuille(sheet, graph, label_to_name, alias_map):
 
                 graph[cell_ref]["parents"].add(norm)
                 graph[norm]["children"].add(cell_ref)
+
+
 
 
 def traiter_objet(obj, graph, label_to_name, alias_map):
@@ -327,7 +361,6 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
 
             graph[ref_obj]["parents"].add(p_norm)
             graph[p_norm]["children"].add(ref_obj)
-
 
 
 def build_graph():
@@ -479,6 +512,8 @@ class RefDialog2(QtGui.QDialog):
         # --- Modes ---
         top_line = QtGui.QHBoxLayout()
         modes_box = QtGui.QVBoxLayout()
+        modes_box.setSpacing(0)  # espace vertical entre widgets
+        modes_box.setContentsMargins(0, 0, 0, 0)  # marges internes
 
         self.mode_in = QtGui.QRadioButton(tr("mode_in"))
         self.mode_out = QtGui.QRadioButton(tr("mode_out"))
@@ -540,30 +575,73 @@ class RefDialog2(QtGui.QDialog):
     # --------------------------------------------------------
     # Enrichissement du texte affiché dans l'arbre
     # --------------------------------------------------------
+
     def enrich_label(self, ref, node):
-        # 1) Extraire feuille + nom de cellule/propriété
-        if "." in ref:
-            sheet, name = ref.split(".", 1)
+        """
+        Construit le texte affiché dans l'arbre :
+        - datas(LabelDatas).D5 (Hauteur)
+        - Pad(LabelPad).Length
+        - Ajoute formule, valeur et type selon les cases cochées
+        """
+
+        # --- 1) Détection du type ---
+        kind = node.get("kind")
+
+        # --- 2) CELLULE SPREADSHEET ---
+        if kind == "cell":
+            sheet = node["sheet"]  # ex: "datas"
+            cell = node["cell"]  # ex: "D5"
+            alias = node.get("alias")
+
+            # Récupérer le label de la feuille
+            sheet_label = None
+            try:
+                sheet_obj = App.ActiveDocument.getObject(sheet)
+                if sheet_obj:
+                    sheet_label = sheet_obj.Label
+            except:
+                pass
+
+            # Construire datas(LabelDatas).D5
+            if sheet_label:
+                base = f"{sheet}({sheet_label}).{cell}"
+            else:
+                base = f"{sheet}.{cell}"
+
+            # Ajouter l’alias
+            if alias:
+                base += f" ({alias})"
+
+        # --- 3) PROPRIÉTÉ D'OBJET FREECAD ---
+        elif kind == "property":
+            obj = node["object"]  # ex: "Pad"
+            prop = node["property"]  # ex: "Length"
+            obj_label = node.get("label")
+
+            # Construire Pad(LabelPad).Length
+            if obj_label:
+                base = f"{obj}({obj_label}).{prop}"
+            else:
+                base = f"{obj}.{prop}"
+
+        # --- 4) AUTRE ---
         else:
-            sheet, name = "", ref
+            base = ref
 
-        # 2) Construire la base : toujours le nom de la cellule
-        base = f"{sheet}.{name}"
-
-        # 3) Ajouter l'alias entre parenthèses si présent
-        alias = node.get("alias")
-        if alias:
-            base += f" ({alias})"
-
-        # 4) Ajouter formule et valeur selon les options
-        label = base
+        # --- 5) Ajouter formule ---
         if self.show_formula.isChecked() and node.get("formula"):
-            label += f" — {tr('content')}: {node['formula']}"
+            base += f" — {tr('content')}: {node['formula']}"
 
+        # --- 6) Ajouter valeur ---
         if self.show_value.isChecked() and node.get("value") is not None:
-            label += f" — {tr('value')}: {node['value']}"
+            base += f" — {tr('value')}: {node['value']}"
 
-        return label
+        # --- 7) 🔥 Ajouter type de contrainte si présent ---
+        ctype = node.get("constraint_type")
+        if ctype:
+            base += f" — {tr('type')}: {ctype}"
+
+        return base
 
     # --------------------------------------------------------
     # Sauvegarde / chargement INI
