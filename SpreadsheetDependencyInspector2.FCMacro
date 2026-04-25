@@ -123,7 +123,6 @@ def addr_to_row_col(addr):
     col = get_col_index(col_letters)
     return row, col
 
-
 def build_alias_map_for_all_sheets():
     alias_map = {}
 
@@ -146,8 +145,6 @@ def build_alias_map_for_all_sheets():
                 alias_map[sheet_name][alias] = full_ref
 
     return alias_map
-
-
 
 def extract_raw_refs_for_graph(formula, sheet_name, alias_map):
     if not formula:
@@ -182,7 +179,6 @@ def extract_raw_refs_for_graph(formula, sheet_name, alias_map):
             refs.add(sheet_aliases[t])
 
     return refs
-
 
 def ajouter_noeud_si_absent(graph, ref, kind=None, obj_name=None, prop_name=None, sheet_name=None, cell_name=None):
     if ref not in graph:
@@ -450,17 +446,18 @@ class RefDialog2(QtGui.QDialog):
         top_line = QtGui.QHBoxLayout()
         modes_box = QtGui.QVBoxLayout()
 
-        self.mode_out = QtGui.QRadioButton("Utilise (IN)")
-        self.mode_in = QtGui.QRadioButton("Utilisé par (OUT)")
-        self.mode_cross = QtGui.QRadioButton("Les deux (CROSS)")
+        self.mode_in = QtGui.QRadioButton(tr("mode_in"))
+        self.mode_out = QtGui.QRadioButton(tr("mode_out"))
+        self.mode_cross = QtGui.QRadioButton(tr("mode_cross"))
+
         self.mode_cross.setChecked(True)
 
         modes_box.addWidget(self.mode_out)
         modes_box.addWidget(self.mode_in)
         modes_box.addWidget(self.mode_cross)
         # cases à cocher
-        self.show_formula = QtGui.QCheckBox("Afficher la formule dans la ligne")
-        self.show_value = QtGui.QCheckBox("Afficher la valeur dans la ligne")
+        self.show_formula = QtGui.QCheckBox(tr("show_formula"))
+        self.show_value = QtGui.QCheckBox(tr("show_value"))
         modes_box.addWidget(self.show_formula)
         modes_box.addWidget(self.show_value)
 
@@ -510,19 +507,29 @@ class RefDialog2(QtGui.QDialog):
     # Enrichissement du texte affiché dans l'arbre
     # --------------------------------------------------------
     def enrich_label(self, ref, node):
-        label = node["label"]
+        # 1) Extraire feuille + nom de cellule/propriété
+        if "." in ref:
+            sheet, name = ref.split(".", 1)
+        else:
+            sheet, name = "", ref
 
-        if self.show_formula.isChecked():
-            if node["formula"]:
-                label += f" — contenu: {node['formula']}"
+        # 2) Construire la base : toujours le nom de la cellule
+        base = f"{sheet}.{name}"
 
-        if self.show_value.isChecked():
-            if node["value"] is not None:
-                label += f" — valeur: {node['value']}"
-        print("ENRICH", ref, "value=", node["value"], "formula=", node["formula"])
+        # 3) Ajouter l'alias entre parenthèses si présent
+        alias = node.get("alias")
+        if alias:
+            base += f" ({alias})"
+
+        # 4) Ajouter formule et valeur selon les options
+        label = base
+        if self.show_formula.isChecked() and node.get("formula"):
+            label += f" — {tr('content')}: {node['formula']}"
+
+        if self.show_value.isChecked() and node.get("value") is not None:
+            label += f" — {tr('value')}: {node['value']}"
 
         return label
-
 
     # --------------------------------------------------------
     # Sauvegarde / chargement INI
@@ -638,6 +645,30 @@ class RefDialog2(QtGui.QDialog):
     # --------------------------------------------------------
     # BUILD TREE
     # --------------------------------------------------------
+
+    def add_in_recursive(self, parent_item, ref, reachable):
+        for p in sorted(self.graph[ref]["parents"]):
+            if p in reachable:
+                node = self.graph[p]
+                item = QtGui.QTreeWidgetItem(parent_item, [self.enrich_label(p, node)])
+                item.setToolTip(0, f"{tr('formula')}: {node['formula']}\n{tr('value')}: {node['value']}")
+                # récursion
+                self.add_in_recursive(item, p, reachable)
+
+    def add_out_recursive(self, parent_item, ref, reachable):
+        for c in sorted(self.graph[ref]["children"]):
+            if c in reachable:
+                node = self.graph[c]
+                item = QtGui.QTreeWidgetItem(parent_item, [self.enrich_label(c, node)])
+                item.setToolTip(0, f"{tr('content')}: {node['formula']}\n{tr('value')}: {node['value']}")
+
+                # Déplier seulement le premier niveau
+                #if parent_item.parent() is not None and parent_item.parent().parent() is None:
+                #    item.setExpanded(True)
+
+                # récursion
+                self.add_out_recursive(item, c, reachable)
+
     def build_tree(self, root):
         root_item = QtGui.QTreeWidgetItem(
             self.tree,
@@ -650,23 +681,16 @@ class RefDialog2(QtGui.QDialog):
 
         reachable = explore_graph(root, self.graph, allow_parents, allow_children)
 
-        # IN section
+        # IN section (récursif)
         if allow_parents:
-            in_item = QtGui.QTreeWidgetItem(root_item, ["Utilise :"])
-            for p in sorted(self.graph[root]["parents"]):
-                if p in reachable:
-                    node = self.graph[p]
-                    item = QtGui.QTreeWidgetItem(in_item, [self.enrich_label(p, node)])
-                    item.setToolTip(0, f"Formule : {node['formula']}\nValeur : {node['value']}")
+            in_item = QtGui.QTreeWidgetItem(root_item, [tr("uses")] )
+            in_item.setExpanded(True)
+            self.add_in_recursive(in_item, root, reachable)
 
-        # OUT section
         if allow_children:
-            out_item = QtGui.QTreeWidgetItem(root_item, ["Utilisé par :"])
-            for c in sorted(self.graph[root]["children"]):
-                if c in reachable:
-                    node = self.graph[c]
-                    item = QtGui.QTreeWidgetItem(out_item, [self.enrich_label(c, node)])
-                    item.setToolTip(0, f"Formule : {node['formula']}\nValeur : {node['value']}")
+            out_item = QtGui.QTreeWidgetItem(root_item, [tr("used_by")])
+            out_item.setExpanded(True)
+            self.add_out_recursive(out_item, root, reachable)
 
     # --------------------------------------------------------
     # EXPAND / COLLAPSE
