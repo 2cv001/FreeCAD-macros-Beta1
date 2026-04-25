@@ -127,7 +127,7 @@ def build_alias_map_for_all_sheets():
     alias_map = {}
 
     for sh in App.ActiveDocument.findObjects("Spreadsheet::Sheet"):
-        sheet_name = sh.Label
+        sheet_name = sh.Name
         alias_map[sheet_name] = {}
 
         xml = sh.cells.Content
@@ -309,16 +309,26 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
         graph[ref_obj]["constraint_type"] = ctype
 
         # --- DÉPENDANCES ---
+        parents_bruts = extract_raw_refs_for_graph(expr, None, alias_map)
 
-        #  1) alias_map doit être passé ici
-        parents_bruts = extract_raw_refs_for_graph(expr, obj.Name, alias_map)
+
 
         for p in parents_bruts:
 
-            p_norm = normalize_ref(p, None, label_to_name, alias_map)
+            #  Trouver la feuille correcte
+            sheet_guess = guess_sheet_from_ref(p, alias_map, label_to_name)
+
+            #  Normaliser correctement
+            p_norm = normalize_ref(p, sheet_guess, label_to_name, alias_map)
+            if not p_norm:
+                continue
+
             ajouter_noeud_si_absent(graph, p_norm)
+
             graph[ref_obj]["parents"].add(p_norm)
             graph[p_norm]["children"].add(ref_obj)
+
+
 
 def build_graph():
     graph = {}
@@ -362,16 +372,20 @@ def normalize_ref(ref, current_sheet_name, label_to_name, alias_map):
                 suffix = suffix[1:]
 
             # label → nom interne FreeCAD
-            if label in label_to_name:
-                name = label_to_name[label]
-            else:
-                name = label
+            name = label_to_name.get(label, label)
 
-            return name + "." + suffix if suffix else name
+            # On continue la normalisation
+            ref = name + "." + suffix if suffix else name
 
-    # 2) Si la référence contient déjà un point → complète
-    #    Ex : "datas.D4", "Pad.Length"
+    # 2) Références avec point : datas.Longueur, Pad.Length, etc.
     if "." in ref:
+        sheet, key = ref.split(".", 1)
+
+        # 🔥 Vérifier si key est un alias
+        if sheet in alias_map:
+            if key in alias_map[sheet]:
+                return alias_map[sheet][key]   # ex: datas.D3
+
         return ref
 
     # 3) Alias locaux (Longueur → datas.D3)
@@ -389,6 +403,26 @@ def normalize_ref(ref, current_sheet_name, label_to_name, alias_map):
 
     # 5) Sinon, on renvoie tel quel
     return ref
+
+def guess_sheet_from_ref(ref, alias_map, label_to_name):
+    # Cas <<Label>>.xxx
+    if ref.startswith("<<"):
+        end = ref.find(">>")
+        if end != -1:
+            label = ref[2:end]  # ex: datas
+            return label_to_name.get(label, label)
+
+    # Cas datas.Longueur
+    if "." in ref:
+        return ref.split(".")[0]
+
+    # Cas Longueur → chercher dans toutes les feuilles
+    for sheet, aliases in alias_map.items():
+        if ref in aliases:
+            return sheet
+
+    return None
+
 
 def explore_graph(ref, graph, allow_parents=True, allow_children=True, visited=None):
     """
@@ -547,6 +581,10 @@ class RefDialog2(QtGui.QDialog):
         self.mode_in.setChecked(mode == 2)
         self.mode_cross.setChecked(mode == 3)
 
+        # --- Cases à cocher ---
+        self.show_formula.setChecked(ui.getboolean("show_formula", False))
+        self.show_value.setChecked(ui.getboolean("show_value", False))
+
         w = ui.getint("width", 600)
         h = ui.getint("height", 400)
         self.resize(w, h)
@@ -588,6 +626,10 @@ class RefDialog2(QtGui.QDialog):
         else:
             mode = 3
         config["UI"]["mode"] = str(mode)
+
+        # --- Cases à cocher ---
+        config["UI"]["show_formula"] = str(self.show_formula.isChecked())
+        config["UI"]["show_value"] = str(self.show_value.isChecked())
 
         size = self.size()
         config["UI"]["width"] = str(size.width())
