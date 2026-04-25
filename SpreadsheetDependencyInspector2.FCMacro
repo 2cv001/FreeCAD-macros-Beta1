@@ -83,7 +83,7 @@ TRANSLATIONS = {
         "btn_expand": "Expand / Collapse",
         "btn_collapse": "Collapse / Expand",
         "btn_refresh_tt": "Refresh",
-        
+
         # Cases à cocher
         "show_formula": "Show formula in line",
         "show_value": "Show value in line",
@@ -360,7 +360,6 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
             graph[ref_obj]["parents"].add(p_norm)
             graph[p_norm]["children"].add(ref_obj)
 
-
 def build_graph():
     graph = {}
 
@@ -454,7 +453,6 @@ def guess_sheet_from_ref(ref, alias_map, label_to_name):
 
     return None
 
-
 def explore_graph(ref, graph, allow_parents=True, allow_children=True, visited=None):
     """
     Explore récursivement le graphe à partir de ref.
@@ -482,7 +480,6 @@ def explore_graph(ref, graph, allow_parents=True, allow_children=True, visited=N
             explore_graph(c, graph, allow_parents, allow_children, visited)
 
     return visited
-
 
 
 class RefDialog2(QtGui.QDialog):
@@ -536,6 +533,8 @@ class RefDialog2(QtGui.QDialog):
         self.btn_refresh.setMaximumWidth(32)
         icon = QtGui.QApplication.style().standardIcon(QtGui.QStyle.SP_BrowserReload)
         self.btn_refresh.setIcon(icon)
+        self.btn_refresh.setToolTip(tr("btn_refresh_tt"))
+
         right_box.addWidget(self.btn_refresh)
 
         self.btn_expand = QtGui.QPushButton(tr("btn_expand"))
@@ -796,6 +795,20 @@ class RefDialog2(QtGui.QDialog):
             self.tree,
             [self.enrich_label(root, self.graph[root])]
         )
+
+        node = self.graph[root]
+        formula = node.get("formula")
+        value = node.get("value")
+
+        tooltip = ""
+
+        if formula:
+            tooltip += f"{tr('content')}: {formula}"
+        if value is not None:
+            tooltip += f"\n{tr('value')}: {value}"
+
+        root_item.setToolTip(0, tooltip.strip())
+
         root_item.setExpanded(True)
 
         allow_parents = self.mode_out.isChecked() or self.mode_cross.isChecked()
