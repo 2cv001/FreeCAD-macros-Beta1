@@ -74,7 +74,7 @@ TRANSLATIONS = {
         "level_prefix": "Niveau: ",
 
         # Cases à cocher
-        "lines_shown": "Lignes vues",
+        "middle_group": "Vus dans la ligne",
         "show_formula": "Contenus",
         "show_value": "Valeurs",
         "filter_cells": "Cellules",
@@ -84,6 +84,7 @@ TRANSLATIONS = {
         "show_names": "Noms",
         "show_labels_alias": "Labels et alias",
         "show_constraint_types": "Types de contrainte",
+        "lines_shown": "Lignes vues",
 
         # Sections arbre
         "uses": "Utilise",
@@ -102,7 +103,7 @@ TRANSLATIONS = {
         "sketch_not_open_title": "Sketch non ouvert",
         "sketch_not_open_msg": "Ouvrez d'abord le sketch en mode édition. Double‑clic dans l’arborescence FreeCAD sur\n ",
         "hint_constraint": "Clic droit pour voir et sélectionner la contrainte",
-
+        "spreadsheet_not_active": "Le Spreadsheet doit être la fenêtre active.",
 
     },
 
@@ -133,6 +134,7 @@ TRANSLATIONS = {
         "show_names": "Names",
         "show_labels_alias": "labels and aliases",
         "show_constraint_types": "Constraint types",
+        "middle_group": "Shown in line",
 
 
         # Sections arbre
@@ -153,7 +155,7 @@ TRANSLATIONS = {
         "sketch_not_open_title": "Sketch not open",
         "sketch_not_open_msg": "First open the sketch in edit mode. Double‑click in the in the model tree on\n ",
         "hint_constraint": "Right‑click to view and select the constraint",
-
+        "spreadsheet_not_active": "The Spreadsheet must be the active window.",
 
     }
 }
@@ -644,19 +646,22 @@ class RefDialog2(QtGui.QDialog):
         # ============================================================
         self.show_formula = QtGui.QCheckBox(tr("show_formula"))
         self.show_value = QtGui.QCheckBox(tr("show_value"))
-
-        extra_box = QtGui.QVBoxLayout()
-        extra_box.setSpacing(0)
-        extra_box.setContentsMargins(10, 0, 10, 0)
-
         self.show_labels_alias = QtGui.QCheckBox(tr("show_labels_alias"))
         self.show_constraint_types = QtGui.QCheckBox(tr("show_constraint_types"))
 
-        extra_box.addWidget(self.show_labels_alias)
-        extra_box.addWidget(self.show_formula)
-        extra_box.addWidget(self.show_value)
-        extra_box.addWidget(self.show_constraint_types)
+        # --- Nouveau cadre ---
+        group_middle = QtGui.QGroupBox(tr("middle_group"))
+        middle_box = QtGui.QVBoxLayout()
+        middle_box.setSpacing(0)
+        middle_box.setContentsMargins(5, 5, 5, 5)
+        group_middle.setLayout(middle_box)
 
+        middle_box.addWidget(self.show_labels_alias)
+        middle_box.addWidget(self.show_formula)
+        middle_box.addWidget(self.show_value)
+        middle_box.addWidget(self.show_constraint_types)
+
+        # Connexions
         self.show_labels_alias.stateChanged.connect(self.recompute)
         self.show_constraint_types.stateChanged.connect(self.recompute)
 
@@ -694,7 +699,7 @@ class RefDialog2(QtGui.QDialog):
         right_box.addWidget(self.btn_collapse_all)
 
         # Assemblage du haut
-        top_line.addLayout(extra_box)
+        top_line.addWidget(group_middle)
         top_line.addLayout(right_box)
 
         layout.addLayout(top_line)
@@ -933,6 +938,12 @@ class RefDialog2(QtGui.QDialog):
             view = FreeCADGui.ActiveDocument.ActiveView
             self.sheet = view.getSheet()
         except:
+            # Avant : return silencieux
+            QtWidgets.QMessageBox.warning(
+                None,
+                tr("error_title"),  # "Erreur" / "Error"
+                tr("spreadsheet_not_active")  # NOUVELLE clé de traduction
+            )
             return  # pas de feuille active → rien à faire
 
         self.setWindowTitle(f"{tr('title')} – {self.sheet.Label}")
