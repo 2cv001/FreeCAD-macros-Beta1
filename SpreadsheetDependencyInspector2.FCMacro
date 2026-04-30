@@ -1103,19 +1103,17 @@ class RefDialog2(QtGui.QDialog):
             ctype = node.get("constraint_type")
 
             if ctype:
-                # Tooltip complet pour les contraintes
                 item.setToolTip(
                     0,
-                    f"{tr('formula')}: {node['formula']}\n"
+                    f"{tr('content')}: {node['formula']}\n"
                     f"{tr('value')}: {node['value']}\n"
                     f"{tr('type')}: {ctype}\n"
                     f"{tr('hint_constraint')}"
                 )
             else:
-                # Tooltip normal
                 item.setToolTip(
                     0,
-                    f"{tr('formula')}: {node['formula']}\n"
+                    f"{tr('content')}: {node['formula']}\n"
                     f"{tr('value')}: {node['value']}"
                 )
 
@@ -1146,19 +1144,17 @@ class RefDialog2(QtGui.QDialog):
             ctype = node.get("constraint_type")
 
             if ctype:
-                # Tooltip complet pour les contraintes
                 item.setToolTip(
                     0,
-                    f"{tr('formula')}: {node['formula']}\n"
+                    f"{tr('content')}: {node['formula']}\n"
                     f"{tr('value')}: {node['value']}\n"
                     f"{tr('type')}: {ctype}\n"
                     f"{tr('hint_constraint')}"
                 )
             else:
-                # Tooltip normal
                 item.setToolTip(
                     0,
-                    f"{tr('formula')}: {node['formula']}\n"
+                    f"{tr('content')}: {node['formula']}\n"
                     f"{tr('value')}: {node['value']}"
                 )
 
@@ -1175,6 +1171,17 @@ class RefDialog2(QtGui.QDialog):
             self.add_out_recursive(item, c, reachable, root_ref)
 
     def build_tree(self, root):
+        self.tree.clear()
+
+        # ------------------------------------------------------------
+        # 1) Filtrage de la racine
+        # ------------------------------------------------------------
+        if not self.should_display(root, root):
+            return  # Arbre vide si la racine ne correspond pas aux filtres
+
+        # ------------------------------------------------------------
+        # 2) Création de l’item racine
+        # ------------------------------------------------------------
         root_item = QtGui.QTreeWidgetItem(
             self.tree,
             [self.enrich_label(root, self.graph[root])]
@@ -1191,24 +1198,29 @@ class RefDialog2(QtGui.QDialog):
             tooltip += f"\n{tr('value')}: {value}"
 
         root_item.setToolTip(0, tooltip.strip())
-        root_item.setExpanded(True)  # La racine est toujours dépliée
+        root_item.setExpanded(True)
 
+        # ------------------------------------------------------------
+        # 3) Exploration du graphe
+        # ------------------------------------------------------------
         allow_parents = self.cb_out.isChecked()
         allow_children = self.cb_in.isChecked()
 
         reachable = explore_graph(root, self.graph, allow_parents, allow_children)
 
-        # IN section (récursif)
+        # ------------------------------------------------------------
+        # 4) Section IN (Uses)
+        # ------------------------------------------------------------
         if allow_parents:
             in_item = QtGui.QTreeWidgetItem(root_item, [tr("uses")])
             self.add_in_recursive(in_item, root, reachable, root)
-            # Pas de setExpanded ici — géré par set_expand_level()
 
-        # OUT section (récursif)
+        # ------------------------------------------------------------
+        # 5) Section OUT (Used by)
+        # ------------------------------------------------------------
         if allow_children:
             out_item = QtGui.QTreeWidgetItem(root_item, [tr("used_by")])
             self.add_out_recursive(out_item, root, reachable, root)
-            # Pas de setExpanded ici — géré par set_expand_level()
 
     def get_tree_depth(self):
         """Retourne la profondeur maximale de l'arbre affiché."""
