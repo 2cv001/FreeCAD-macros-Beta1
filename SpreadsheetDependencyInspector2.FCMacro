@@ -1250,9 +1250,7 @@ class RefDialog2(QtGui.QDialog):
 
         node = self.graph[root]
 
-        # ------------------------------------------------------------
-        # 3b) Tooltip enrichi
-        # ------------------------------------------------------------
+        # Tooltip enrichi
         tooltip = f"Name : {node.get('ref', '')}"
 
         if node.get("kind") == "cell":
@@ -1277,7 +1275,7 @@ class RefDialog2(QtGui.QDialog):
         # ------------------------------------------------------------
         # 4) Section IN (Uses)
         # ------------------------------------------------------------
-        if allow_parents:
+        if self.cb_out.isChecked():  # <-- correction : on utilise la case, pas allow_parents
             in_item = QtGui.QTreeWidgetItem(root_item, [tr("uses"), "", "", "", ""])
             self.add_in_recursive(in_item, root, reachable, root)
 
@@ -1287,7 +1285,7 @@ class RefDialog2(QtGui.QDialog):
         # ------------------------------------------------------------
         # 5) Section OUT (Used by)
         # ------------------------------------------------------------
-        if allow_children:
+        if self.cb_in.isChecked():  # <-- correction : on utilise la case, pas allow_children
             out_item = QtGui.QTreeWidgetItem(root_item, [tr("used_by"), "", "", "", ""])
             self.add_out_recursive(out_item, root, reachable, root)
 
