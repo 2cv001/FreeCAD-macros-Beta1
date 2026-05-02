@@ -736,9 +736,13 @@ class RefDialog2(QtGui.QDialog):
         self.tree.header().setSectionsMovable(True)
         self.tree.header().setSectionsClickable(True)
         self.tree.header().setStretchLastSection(True)
-        self.tree.header().setSectionResizeMode(QtGui.QHeaderView.ResizeToContents)
-        self.tree.setStyleSheet("QTreeWidget::item:hover { background-color: #e0e0e0; }")
+        self.tree.header().setSectionResizeMode(QtGui.QHeaderView.Interactive)
+        # Largeur minimale
+        self.tree.header().setMinimumSectionSize(30)
+        # étirer la dernière colonne
+        self.tree.header().setStretchLastSection(True)
 
+        self.tree.setStyleSheet("QTreeWidget::item:hover { background-color: #e0e0e0; }")
         self.tree.setSelectionBehavior(QtGui.QAbstractItemView.SelectRows)
 
         layout.addWidget(self.tree)
@@ -867,12 +871,36 @@ class RefDialog2(QtGui.QDialog):
         self.resize(w, h)
 
         # --- Restaurer l'état des colonnes ---
+        header = self.tree.header()
+
+        # 1) Restaurer l'état du header (ordre, visibilité, tri)
         if "header_state" in ui:
             try:
                 state = QtCore.QByteArray.fromBase64(ui["header_state"].encode("utf-8"))
-                self.tree.header().restoreState(state)
+                header.restoreState(state)
             except:
                 pass
+
+        # 2) Forcer le mode interactif (sinon restoreState remet ResizeToContents)
+        header.setSectionResizeMode(QtGui.QHeaderView.Interactive)
+        header.setMinimumSectionSize(30)
+
+        # 3) Restaurer les largeurs de colonnes
+        if "column_widths" in ui:
+            widths = ui["column_widths"].split(",")
+            for i, cw in enumerate(widths):
+                try:
+                    self.tree.setColumnWidth(i, int(cw))
+                except:
+                    pass
+
+        if "column_widths" in ui:
+            widths = ui["column_widths"].split(",")
+            for i, cw in enumerate(widths):
+                try:
+                    self.tree.setColumnWidth(i, int(cw))
+                except:
+                    pass
 
         # --- Position ---
         x = ui.getint("pos_x", 100)
@@ -934,6 +962,10 @@ class RefDialog2(QtGui.QDialog):
         # --- Ordre et état des colonnes ---
         header_state = self.tree.header().saveState()
         config["UI"]["header_state"] = header_state.toBase64().data().decode("utf-8")
+
+        # Sauvegarde des largeurs de colonnes
+        widths = [self.tree.columnWidth(i) for i in range(self.tree.columnCount())]
+        config["UI"]["column_widths"] = ",".join(str(w) for w in widths)
 
         # --- Écran ---
         try:
