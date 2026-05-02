@@ -4,7 +4,7 @@ __Name__ = "Spreadsheet Dependency Inspector"
 __Comment__ = "The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties."
 __Author__ = "2cv001"
 __Title__ = "Spreadsheet Dependency Inspector"
-__Date__ = "2026/05/01 17:58"  # YYYY/MM/DD
+__Date__ = "2026/05/02 20:29"  # YYYY/MM/DD
 __Version__ = __Date__
 __Icon__ = "https://wiki.freecad.org/images/8/86/SpreadsheetDependencyInspector.png"
 __Wiki__ = "https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector"
@@ -1156,8 +1156,9 @@ class RefDialog2(QtGui.QDialog):
                 tooltip += f"\nType: {ctype}"
                 tooltip += f"\n{tr('hint_constraint')}"
 
-            for col in range(self.tree.columnCount()):
-                item.setToolTip(col, tooltip)
+            item.setToolTip(0, tooltip)
+            # for col in range(self.tree.columnCount()):
+            #    item.setToolTip(col, tooltip)
 
             # Données internes pour clic droit
             if node["kind"] == "property" and node["property"].startswith("Constraints["):
@@ -1201,8 +1202,9 @@ class RefDialog2(QtGui.QDialog):
                 tooltip += f"\nType: {ctype}"
                 tooltip += f"\n{tr('hint_constraint')}"
 
-            for col in range(self.tree.columnCount()):
-                item.setToolTip(col, tooltip)
+            #for col in range(self.tree.columnCount()):
+            #    item.setToolTip(col, tooltip)
+            item.setToolTip(0, tooltip)
 
             # Données internes pour clic droit
             if node["kind"] == "property" and node["property"].startswith("Constraints["):
