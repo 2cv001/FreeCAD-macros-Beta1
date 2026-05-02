@@ -734,6 +734,7 @@ class RefDialog2(QtGui.QDialog):
         self.tree.header().setStretchLastSection(True)
 
         self.tree.header().setSectionsMovable(True)
+        self.tree.header().setSectionsClickable(True)
         self.tree.header().setStretchLastSection(True)
         self.tree.header().setSectionResizeMode(QtGui.QHeaderView.ResizeToContents)
         self.tree.setStyleSheet("QTreeWidget::item:hover { background-color: #e0e0e0; }")
@@ -865,6 +866,14 @@ class RefDialog2(QtGui.QDialog):
         h = ui.getint("height", 400)
         self.resize(w, h)
 
+        # --- Restaurer l'état des colonnes ---
+        if "header_state" in ui:
+            try:
+                state = QtCore.QByteArray.fromBase64(ui["header_state"].encode("utf-8"))
+                self.tree.header().restoreState(state)
+            except:
+                pass
+
         # --- Position ---
         x = ui.getint("pos_x", 100)
         y = ui.getint("pos_y", 100)
@@ -920,6 +929,11 @@ class RefDialog2(QtGui.QDialog):
         pos = self.pos()
         config["UI"]["pos_x"] = str(pos.x())
         config["UI"]["pos_y"] = str(pos.y())
+
+
+        # --- Ordre et état des colonnes ---
+        header_state = self.tree.header().saveState()
+        config["UI"]["header_state"] = header_state.toBase64().data().decode("utf-8")
 
         # --- Écran ---
         try:
