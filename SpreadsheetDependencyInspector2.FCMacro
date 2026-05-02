@@ -965,12 +965,39 @@ class RefDialog2(QtGui.QDialog):
     # RECOMPUTE
     # --------------------------------------------------------
     def recompute(self):
-        self.graph = build_graph()
+
+        # ------------------------------------------------------------
+        # 0) Vérifier si la sélection appartient à une autre feuille
+        # ------------------------------------------------------------
+        current_view = Gui.ActiveDocument.ActiveView
+        try:
+            new_sheet = current_view.getSheet()
+        except:
+            new_sheet = None
+
+        if new_sheet and new_sheet != self.sheet:
+            self.sheet = new_sheet
+            # IMPORTANT : reconstruire le graphe sur la nouvelle feuille
+            self.graph = build_graph()
+
+        # ------------------------------------------------------------
+        # 1) Focus sur la feuille active
+        # ------------------------------------------------------------
         self.sheet.ViewObject.doubleClicked()
 
+        # ------------------------------------------------------------
+        # 2) Mise à jour du titre
+        # ------------------------------------------------------------
         self.setWindowTitle(f"{tr('title')} – {self.sheet.Label}")
 
+        # ------------------------------------------------------------
+        # 3) Nettoyage de l'arbre
+        # ------------------------------------------------------------
         self.tree.clear()
+
+        # ------------------------------------------------------------
+        # 4) Lire la sélection sur la feuille ACTUELLE
+        # ------------------------------------------------------------
         selected = self.sheet.ViewObject.getView().selectedCells()
         if not selected:
             self.update_column_visibility()
