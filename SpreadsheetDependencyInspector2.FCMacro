@@ -1578,6 +1578,7 @@ class RefDialog2(QtGui.QDialog):
         old_value = self._old_value
 
         if old_value is None:
+            # Aucun début d'édition détecté → on ignore
             return
 
         if new_value == old_value:
@@ -1602,111 +1603,42 @@ class RefDialog2(QtGui.QDialog):
             if not isinstance(node, dict):
                 return
 
-            kind = node.get("kind")
+            # On ne traite QUE les cellules Spreadsheet
+            if node["kind"] != "cell":
+                print("IGNORED: not a cell")
+                return
 
-            # ============================================================
-            # 3A) CELLULE SPREADSHEET (ton code d'origine)
-            # ============================================================
-            if kind == "cell":
-                ref = node["ref"]  # ex: "datas.D3"
-                sheet_name, local = ref.split(".")
-                sheet = App.ActiveDocument.getObject(sheet_name)
-                if not sheet:
-                    print("ERREUR: feuille introuvable :", sheet_name)
-                    return
+            # Récupération correcte de la feuille et de la cellule
+            ref = node["ref"]  # ex: "datas.D3"
+            sheet_name, local = ref.split(".")
+            sheet = App.ActiveDocument.getObject(sheet_name)
+            if not sheet:
+                print("ERREUR: feuille introuvable :", sheet_name)
+                return
 
-                # --- ALIAS ---
-                if column == 1:
-                    print(">>> ALIAS BLOCK REACHED")
-                    print("sheet_name =", sheet_name, "local =", local)
-                    print("new_value =", new_value)
-                    try:
-                        print(">>> setAlias(", local, ",", new_value, ")")
-                        sheet.setAlias(local, new_value)
-                        sheet.recompute()
-                    except Exception as e:
-                        print("Alias ERROR:", e)
-                    return
-
-                # --- FORMULE ---
-                if column == 3:
-                    try:
-                        cell = sheet.get(local)
-                        cell.setExpression(new_value)
-                        sheet.recompute()
-                    except Exception as e:
-                        print("Expression ERROR:", e)
-                    return
-
-            # ============================================================
-            # 3B) CONTRAINTE DE SKETCH (colonne 3 → expression)
-            # ============================================================
-            if kind == "property" and node.get("property", "").startswith("Constraints[") and column == 3:
-
-                # Filtrer les contraintes non numériques
-                numeric_types = {"Distance", "DistanceX", "DistanceY", "Radius", "Angle", "Length"}
-                if node.get("constraint_type") not in numeric_types:
-                    print("IGNORED: constraint has no numeric value")
-                    return
-
-                obj_name = node.get("object")  # "Sketch001"
-                prop = node.get("property")  # "Constraints[9]"
-
-                sketch = App.ActiveDocument.getObject(obj_name)
-                if not sketch:
-                    return
-
-                # Extraire l’index
+            # --- ALIAS ---
+            if column == 1:
+                print(">>> ALIAS BLOCK REACHED")
+                print("sheet_name =", sheet_name, "local =", local)
+                print("new_value =", new_value)
                 try:
-                    idx = int(prop[len("Constraints["):-1])
-                except ValueError:
-                    return
-
-                print(f">>> SET EXPRESSION ON CONSTRAINT {idx} =", new_value)
-
-                try:
-                    sketch.setExpression(f"Constraints[{idx}]", new_value)
-                    sketch.recompute()
+                    print(">>> setAlias(", local, ",", new_value, ")")
+                    sheet.setAlias(local, new_value)
+                    sheet.recompute()
                 except Exception as e:
-                    print("Constraint Expression ERROR:", e)
-
+                    print("Alias ERROR:", e)
                 return
 
-            # ============================================================
-            # 3C) PROPRIÉTÉ D’OBJET (colonne 3 → expression)
-            # ============================================================
-            if kind == "property" and not node.get("property", "").startswith("Constraints[") and column == 3:
 
-                obj_name = node.get("object")
-                prop_name = node.get("property")
-
-                obj = App.ActiveDocument.getObject(obj_name)
-                if not obj:
-                    return
-
-                print(f">>> SET EXPRESSION ON OBJECT {obj_name}.{prop_name} =", new_value)
-
+            # --- FORMULE ---
+            if column == 3:
                 try:
-                    obj.setExpression(prop_name, new_value)
-                    App.ActiveDocument.recompute()
+                    sheet.set(local, new_value)  # ← C’EST LA SEULE LIGNE QUI MARCHE
+                    sheet.recompute()
                 except Exception as e:
-                    print("Object Expression ERROR:", e)
-
+                    print("Formula ERROR:", e)
                 return
 
-            # ============================================================
-            # 3D) OBJET (colonne 1 → Label)
-            # ============================================================
-            if kind == "object" and column == 1:
-                obj_name = node.get("object")
-                obj = App.ActiveDocument.getObject(obj_name)
-                if obj:
-                    try:
-                        obj.Label = new_value
-                        App.ActiveDocument.recompute()
-                    except Exception as e:
-                        print("Object Label ERROR:", e)
-                return
 
         finally:
             self._editing = False
