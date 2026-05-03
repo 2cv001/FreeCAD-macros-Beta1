@@ -1617,6 +1617,8 @@ class RefDialog2(QtGui.QDialog):
                     obj.setExpression(prop, expr)
                     App.ActiveDocument.recompute()
 
+                    self.recompute()
+
                 except Exception as e:
                     print("Formula PROPERTY ERROR:", e)
                 return
@@ -1643,6 +1645,7 @@ class RefDialog2(QtGui.QDialog):
                     print(">>> setAlias(", local, ",", new_value, ")")
                     sheet.setAlias(local, new_value)
                     sheet.recompute()
+                    self.recompute()
                 except Exception as e:
                     print("Alias ERROR:", e)
                 return
@@ -1652,9 +1655,12 @@ class RefDialog2(QtGui.QDialog):
                 try:
                     sheet.set(local, new_value)  # new_value avec '='
                     sheet.recompute()
+                    self.recompute()
                 except Exception as e:
                     print("Formula CELL ERROR:", e)
                 return
+
+
 
         finally:
             self._editing = False
