@@ -1562,8 +1562,8 @@ class RefDialog2(QtGui.QDialog):
     def on_item_changed(self, item, column):
 
         # --- DEBUG minimal ---
-        if column in (1, 3):
-            print(f"[CALL] on_item_changed col={column}, text='{item.text(column)}'")
+        #if column in (1, 3):
+        #    print(f"[CALL] on_item_changed col={column}, text='{item.text(column)}'")
 
         # --- 1) Filtrage technique ---
         if self._building:
@@ -1584,7 +1584,7 @@ class RefDialog2(QtGui.QDialog):
             print("→ IGNORE : valeur inchangée")
             return
 
-        print(f"→ MODIFICATION UTILISATEUR détectée : '{old_value}' → '{new_value}'")
+        #print(f"→ MODIFICATION UTILISATEUR détectée : '{old_value}' → '{new_value}'")
 
         # --- 3) Traitement ---
         self._editing = True
@@ -1595,41 +1595,62 @@ class RefDialog2(QtGui.QDialog):
 
             node = self.graph.get(node_id)
 
-            print("DEBUG node:", node)
-            print("DEBUG kind:", node.get("kind"))
-            print("DEBUG ref:", node.get("ref"))
+            #print("DEBUG node:", node)
+            #print("DEBUG kind:", node.get("kind"))
+            #print("DEBUG ref:", node.get("ref"))
 
             if not isinstance(node, dict):
                 return
 
             kind = node.get("kind")
 
-            # --- FORMULE SUR CONTRAINTE / PROPRIÉTÉ ---
+            # ============================================================
+            # === FORMULE SUR CONTRAINTE / PROPRIÉTÉ ======================
+            # ============================================================
             if kind == "property" and column == 3:
                 try:
-                    obj_name = node.get("object")  # ex: "Sketch"
-                    prop = node.get("property")  # ex: "Constraints[8]"
+                    obj_name = node.get("object")
+                    prop = node.get("property")
                     obj = App.ActiveDocument.getObject(obj_name)
 
-                    expr = new_value.lstrip("=")  # ExpressionEngine → sans '='
+                    expr = new_value.lstrip("=")
 
-                    print(f">>> setExpression({prop}, {expr})")
+                    #print(f">>> setExpression({prop}, {expr})")
                     obj.setExpression(prop, expr)
                     App.ActiveDocument.recompute()
 
+                    # Recompute macro
                     self.recompute()
 
                 except Exception as e:
                     print("Formula PROPERTY ERROR:", e)
+
+                    # --- RESTAURATION ---
+                    old_expr = old_value.lstrip("=")
+                    print(f"Restoring old expression: {old_expr}")
+
+                    try:
+                        obj.setExpression(prop, old_expr)
+                        App.ActiveDocument.recompute()
+                    except Exception as e2:
+                        print("ERROR restoring old expression:", e2)
+
+                    # --- RESTAURATION DANS L’ARBRE ---
+                    self._editing = True
+                    item.setText(column, old_value)
+                    self._editing = False
+
                 return
 
-            # --- Si ce n'est pas une cellule, on ignore ---
+            # ============================================================
+            # === CELLULE SPREADSHEET ====================================
+            # ============================================================
             if kind != "cell":
                 print("IGNORED: not a cell")
                 return
 
             # --- Récupération correcte de la feuille et de la cellule ---
-            ref = node["ref"]  # ex: "datas.D3"
+            ref = node["ref"]
             sheet_name, local = ref.split(".")
             sheet = App.ActiveDocument.getObject(sheet_name)
             if not sheet:
@@ -1638,29 +1659,45 @@ class RefDialog2(QtGui.QDialog):
 
             # --- ALIAS ---
             if column == 1:
-                print(">>> ALIAS BLOCK REACHED")
-                print("sheet_name =", sheet_name, "local =", local)
-                print("new_value =", new_value)
                 try:
-                    print(">>> setAlias(", local, ",", new_value, ")")
                     sheet.setAlias(local, new_value)
                     sheet.recompute()
                     self.recompute()
+
                 except Exception as e:
                     print("Alias ERROR:", e)
+
+                    # Restauration
+                    self._editing = True
+                    item.setText(column, old_value)
+                    self._editing = False
+
                 return
 
             # --- FORMULE SUR CELLULE SPREADSHEET ---
             if column == 3:
                 try:
-                    sheet.set(local, new_value)  # new_value avec '='
+                    sheet.set(local, new_value)
                     sheet.recompute()
                     self.recompute()
+
                 except Exception as e:
                     print("Formula CELL ERROR:", e)
+
+                    # --- RESTAURATION ---
+                    print(f"Restoring old cell formula: {old_value}")
+                    try:
+                        sheet.set(local, old_value)
+                        sheet.recompute()
+                    except Exception as e2:
+                        print("ERROR restoring old cell formula:", e2)
+
+                    # --- RESTAURATION DANS L’ARBRE ---
+                    self._editing = True
+                    item.setText(column, old_value)
+                    self._editing = False
+
                 return
-
-
 
         finally:
             self._editing = False
@@ -1678,7 +1715,7 @@ class RefDialog2(QtGui.QDialog):
 
         self._old_value = item.text(column)
         self._old_column = column
-        print(f"[START EDIT] col={column}, old='{self._old_value}'")
+        #print(f"[START EDIT] col={column}, old='{self._old_value}'")
 
 
 # ------------------------------------------------------------
