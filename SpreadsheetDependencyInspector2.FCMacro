@@ -717,6 +717,11 @@ class RefDialog2(QtGui.QDialog):
         #  Arbre
         # ============================================================
         self.tree = QtGui.QTreeWidget()
+        self.tree.setEditTriggers(
+            QtGui.QAbstractItemView.SelectedClicked |
+            QtGui.QAbstractItemView.EditKeyPressed
+        )
+
         self.tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._onTreeContextMenu)
 
@@ -752,7 +757,7 @@ class RefDialog2(QtGui.QDialog):
         self.show_value.stateChanged.connect(self.recompute)
 
         # --- Début et fin d’édition ---
-        self.tree.itemDoubleClicked.connect(self.on_start_edit)
+        # self.tree.itemDoubleClicked.connect(self.on_start_edit)
         self.tree.itemChanged.connect(self.on_item_changed)
 
         # ============================================================
