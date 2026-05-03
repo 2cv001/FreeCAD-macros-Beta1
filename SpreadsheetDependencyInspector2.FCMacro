@@ -1578,7 +1578,6 @@ class RefDialog2(QtGui.QDialog):
         old_value = self._old_value
 
         if old_value is None:
-            # Aucun début d'édition détecté → on ignore
             return
 
         if new_value == old_value:
@@ -1603,12 +1602,31 @@ class RefDialog2(QtGui.QDialog):
             if not isinstance(node, dict):
                 return
 
-            # On ne traite QUE les cellules Spreadsheet
-            if node["kind"] != "cell":
+            kind = node.get("kind")
+
+            # --- FORMULE SUR CONTRAINTE / PROPRIÉTÉ ---
+            if kind == "property" and column == 3:
+                try:
+                    obj_name = node.get("object")  # ex: "Sketch"
+                    prop = node.get("property")  # ex: "Constraints[8]"
+                    obj = App.ActiveDocument.getObject(obj_name)
+
+                    expr = new_value.lstrip("=")  # ExpressionEngine → sans '='
+
+                    print(f">>> setExpression({prop}, {expr})")
+                    obj.setExpression(prop, expr)
+                    App.ActiveDocument.recompute()
+
+                except Exception as e:
+                    print("Formula PROPERTY ERROR:", e)
+                return
+
+            # --- Si ce n'est pas une cellule, on ignore ---
+            if kind != "cell":
                 print("IGNORED: not a cell")
                 return
 
-            # Récupération correcte de la feuille et de la cellule
+            # --- Récupération correcte de la feuille et de la cellule ---
             ref = node["ref"]  # ex: "datas.D3"
             sheet_name, local = ref.split(".")
             sheet = App.ActiveDocument.getObject(sheet_name)
@@ -1629,16 +1647,14 @@ class RefDialog2(QtGui.QDialog):
                     print("Alias ERROR:", e)
                 return
 
-
-            # --- FORMULE ---
+            # --- FORMULE SUR CELLULE SPREADSHEET ---
             if column == 3:
                 try:
-                    sheet.set(local, new_value)  # ← C’EST LA SEULE LIGNE QUI MARCHE
+                    sheet.set(local, new_value)  # new_value avec '='
                     sheet.recompute()
                 except Exception as e:
-                    print("Formula ERROR:", e)
+                    print("Formula CELL ERROR:", e)
                 return
-
 
         finally:
             self._editing = False
