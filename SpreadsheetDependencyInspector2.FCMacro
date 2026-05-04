@@ -1377,11 +1377,8 @@ class RefDialog2(QtGui.QDialog):
 
             # --- Rendre éditables les colonnes 1 et 3 ---
             # Rendre éditables uniquement les colonnes 1 (Alias) et 3 (Formule)
-            for col in range(self.tree.columnCount()):
-                if col in (1, 3):
-                    root_item.setFlags(root_item.flags() | QtCore.Qt.ItemIsEditable)
-                else:
-                    root_item.setFlags(root_item.flags() & ~QtCore.Qt.ItemIsEditable)
+            # --- Rendre l’item racine éditable (filtrage par colonne se fait ailleurs) ---
+            root_item.setFlags(root_item.flags() | QtCore.Qt.ItemIsEditable)
 
             #root_item.setFlags(flags)
 
