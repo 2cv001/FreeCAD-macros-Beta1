@@ -717,8 +717,7 @@ class RefDialog2(QtGui.QDialog):
         #  Arbre
         # ============================================================
         self.tree = QtGui.QTreeWidget()
-        self.tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-        self.tree.customContextMenuRequested.connect(self._onTreeContextMenu)
+        self.tree.itemDoubleClicked.connect(self.on_item_double_click_constraint)
 
         self.tree.setHeaderHidden(False)
         self.tree.setColumnCount(5)
@@ -1502,7 +1501,7 @@ class RefDialog2(QtGui.QDialog):
     # --------------------------------------------------------
     # Clic droit dans l'arbre : sélectionner contrainte + focus Spreadsheet
     # --------------------------------------------------------
-    def onTreeRightClick(self, item, column):
+    def on_item_double_click_constraint(self, item, column):
 
         sketch_name = item.data(0, QtCore.Qt.UserRole + 1)
         constraint_index = item.data(0, QtCore.Qt.UserRole + 2)
@@ -1549,15 +1548,6 @@ class RefDialog2(QtGui.QDialog):
         # Redonner le focus au Spreadsheet
         self.restoreSpreadsheetFocus()
 
-    def _onTreeContextMenu(self, pos):
-
-        item = self.tree.itemAt(pos)
-
-        if item is None:
-            return
-
-        # Appel direct de ta fonction renommée
-        self.onTreeRightClick(item, 0)
 
     # ---------------------------------------------------------
     # Vérifie si un sketch est en mode édition
