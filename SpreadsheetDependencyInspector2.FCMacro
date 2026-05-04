@@ -987,32 +987,52 @@ class RefDialog2(QtGui.QDialog):
 
     # --------------------------------------------------------
     # RECOMPUTE
-    # --------------------------------------------------------
     def recompute(self):
 
-        # ------------------------------------------------------------
-        # Protection : on reconstruit l'arbre → on bloque itemChanged
-        # ------------------------------------------------------------
         self._building = True
+        print('recompute lancé')
+
         try:
             # ------------------------------------------------------------
-            # 0) Vérifier si la sélection appartient à une autre feuille
+            # 0) Forcer Qt à flusher les signaux
+            # ------------------------------------------------------------
+            self.tree.clearFocus()
+            self.tree.setFocus()
+
+            # ------------------------------------------------------------
+            # 1) Détecter la feuille active
             # ------------------------------------------------------------
             current_view = Gui.ActiveDocument.ActiveView
-            try:
-                new_sheet = current_view.getSheet()
-            except:
-                new_sheet = None
 
+            # Si on est dans la vue 3D → ouvrir la feuille
+            if type(current_view).__name__ == "View3DInventorPy":
+                self.sheet.ViewObject.doubleClicked()
+                print('focus changé')
+
+                # IMPORTANT : relire la vue active
+                current_view = Gui.ActiveDocument.ActiveView
+                print('current_view', current_view)
+
+            # Essayer de récupérer la feuille via la vue
+            new_sheet = None
+            if hasattr(current_view, "getSheet"):
+                try:
+                    new_sheet = current_view.getSheet()
+                except Exception:
+                    print("getSheet() a échoué")
+
+            # Fallback : récupérer via la sélection
+            if not new_sheet:
+                sel = Gui.Selection.getSelection()
+                if sel and sel[0].TypeId == "Spreadsheet::Sheet":
+                    new_sheet = sel[0]
+                else:
+                    print("new_sheet est à None")
+
+            # Si la feuille a changé → reconstruire le graphe
             if new_sheet and new_sheet != self.sheet:
                 self.sheet = new_sheet
-                # IMPORTANT : reconstruire le graphe sur la nouvelle feuille
                 self.graph = build_graph()
-
-            # ------------------------------------------------------------
-            # 1) Focus sur la feuille active
-            # ------------------------------------------------------------
-            self.sheet.ViewObject.doubleClicked()
 
             # ------------------------------------------------------------
             # 2) Mise à jour du titre
@@ -1025,13 +1045,14 @@ class RefDialog2(QtGui.QDialog):
             self.tree.clear()
 
             # ------------------------------------------------------------
-            # 4) Lire la sélection sur la feuille ACTUELLE
+            # 4) Lire la sélection sur la feuille
             # ------------------------------------------------------------
             selected = self.sheet.ViewObject.getView().selectedCells()
             if not selected:
                 self.update_column_visibility()
                 return
 
+            # Convertir la sélection en adresses
             addrs = []
             for item in selected:
                 if isinstance(item, str):
@@ -1050,13 +1071,13 @@ class RefDialog2(QtGui.QDialog):
                 return
 
             # ------------------------------------------------------------
-            # 5) Construction de l’arbre
+            # 5) Construire l’arbre
             # ------------------------------------------------------------
             for root in roots:
                 self.build_tree(root)
 
             # ------------------------------------------------------------
-            # 6) Ajuster la profondeur max du SpinBox
+            # 6) Ajuster la profondeur max
             # ------------------------------------------------------------
             depth = self.get_tree_depth()
             self.level_spin.setMaximum(depth)
@@ -1075,9 +1096,6 @@ class RefDialog2(QtGui.QDialog):
             self.update_column_visibility()
 
         finally:
-            # ------------------------------------------------------------
-            # Fin de reconstruction → on réactive itemChanged
-            # ------------------------------------------------------------
             self._building = False
 
     # --- Fonctions de catégorisation ---
