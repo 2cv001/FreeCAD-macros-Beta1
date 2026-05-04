@@ -752,8 +752,12 @@ class RefDialog2(QtGui.QDialog):
         self.show_value.stateChanged.connect(self.recompute)
 
         # --- Début et fin d’édition ---
-        self.tree.itemDoubleClicked.connect(self.on_start_edit)
+        # self.tree.itemDoubleClicked.connect(self.on_start_edit)
+        self.tree.itemClicked.connect(self.on_item_simple_clicked)
+
         self.tree.itemChanged.connect(self.on_item_changed)
+        self.tree.setEditTriggers(QtGui.QAbstractItemView.EditKeyPressed |
+                                  QtGui.QAbstractItemView.SelectedClicked)
 
         # ============================================================
         #  Charger les réglages
@@ -1722,7 +1726,7 @@ class RefDialog2(QtGui.QDialog):
             self._old_value = None
             self._old_column = None
 
-    def on_start_edit(self, item, column):
+    def on_item_simple_clicked(self, item, column):
         """
         Début d'édition utilisateur.
         On mémorise l’ancienne valeur pour détecter un vrai changement.
