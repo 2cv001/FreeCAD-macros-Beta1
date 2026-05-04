@@ -1376,8 +1376,14 @@ class RefDialog2(QtGui.QDialog):
             root_item.setData(0, QtCore.Qt.UserRole, root)
 
             # --- Rendre éditables les colonnes 1 et 3 ---
-            flags = root_item.flags() | QtCore.Qt.ItemIsEditable
-            root_item.setFlags(flags)
+            # Rendre éditables uniquement les colonnes 1 (Alias) et 3 (Formule)
+            for col in range(self.tree.columnCount()):
+                if col in (1, 3):
+                    root_item.setFlags(root_item.flags() | QtCore.Qt.ItemIsEditable)
+                else:
+                    root_item.setFlags(root_item.flags() & ~QtCore.Qt.ItemIsEditable)
+
+            #root_item.setFlags(flags)
 
             # Tooltip enrichi
             tooltip = f"Name : {node.get('ref', '')}"
