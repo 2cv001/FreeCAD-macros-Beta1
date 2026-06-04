@@ -10,11 +10,11 @@ __Name__   = "Alias for table for object"
 __Comment__ ="Automatically creates aliases in a two-dimensional table using the names of the rows and columns"
 __Author__ = "2cv001"
 __Title__   = "Alias For Table For Object"
-__Date__    = "2026/06/03"    #YYYY/MM/DD 14;21 Béta
+__Date__    = "2026/06/04"    #YYYY/MM/DD 14;21 Béta
 __Version__ = __Date__
 __License__ = "Apache-2.0"
 __Wiki__ = "https://wiki.freecad.org/Macro_Alias_For_Table_For_Object"
-__Icon__ = "https://wiki.freecad.org/images/8/86/SpreadsheetDependencyInspector.png"
+__Icon__ = "https://wiki.freecad.org/images/f/f1/AliasForTableForObject.png"
 # https://forum.freecad.org/viewtopic.php?t=84878
 #===========================================================================================
 # The macro automatically creates alias in a two-dimensional table using the name of the row
